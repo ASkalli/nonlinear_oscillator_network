@@ -330,6 +330,152 @@ class Oscillator_RNN(Base_Model):
                 self.activations[f"layer{l}"].append(h[l].detach().cpu().clone())
         out = self.W_out(h[-1])
         return out
+ 
+    
+class SparseLinear(nn.Module):
+    def __init__(self, in_features, out_features, sparsity=0.2, bias=True):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+
+        self.weight = nn.Parameter(torch.empty(out_features, in_features))
+        self.register_buffer('mask', (torch.rand(out_features, in_features) < sparsity).float())
+
+        self.bias = nn.Parameter(torch.empty(out_features)) if bias else None
+
+        nn.init.kaiming_uniform_(self.weight, a=5**0.5)
+        if self.bias is not None:
+            fan_in = in_features
+            bound = 1 / fan_in**0.5
+            nn.init.uniform_(self.bias, -bound, bound)
+
+        # Ensure masked weights have zero gradients
+        self.weight.register_hook(lambda grad: grad * self.mask)
+
+    def forward(self, X):
+        return F.linear(X, self.weight * self.mask, self.bias)
+    
+ 
+    
+class Oscillator_RNN_dyn(Base_Model):
+    def __init__(self, params):
+        super(Oscillator_RNN_dyn, self).__init__()
+
+        self.N_in = params["N_in"]
+        self.N_out = params["N_out"]
+        self.N_neurons = params["N_neurons"]
+        self.N_layers = params["N_layers"]
+        self.T_SS = params["time_steady_state"]
+        
+        self.alpha = 0.9
+        
+        self.eps_int = 1e-1
+        
+        self.sparsity = 0.2
+        self.spectral_radius = 0.8
+        
+        self.activations = {}
+
+        self.W_input = nn.Linear(in_features=self.N_in, out_features = self.N_neurons)
+        
+        self.W_in = nn.ModuleList([
+            nn.Linear(self.N_neurons, self.N_neurons)
+            for _ in range(self.N_layers)
+        ])
+    
+        self.W_recurrent =  nn.ModuleList([
+            SparseLinear(self.N_neurons, self.N_neurons,sparsity=0.2)
+            for _ in range(self.N_layers)
+        ])
+        
+        self.W_out = nn.Linear(in_features = self.N_neurons, out_features = self.N_out)
+        
+
+
+    def init_esn_weights(self, spectral_radius=0.8, sparsity=0.2, reservoir=False):
+        
+        self.sparsity = sparsity
+        self.spectral_radius = spectral_radius
+        
+        with torch.no_grad():
+            for layer in range(self.N_layers):
+                W = (2 * torch.rand(self.N_neurons, self.N_neurons) - 1)
+                W *= self.W_recurrent[layer].mask
+                eigvals = torch.linalg.eigvals(W).abs().max()
+                
+                if eigvals < 1e-6:
+                    eigvals = 1e-6
+                
+                W *= self.spectral_radius / eigvals
+                self.W_recurrent[layer].weight.copy_(W)
+                
+                W = (2 * torch.rand(self.N_neurons, self.N_neurons) - 1)
+                #W *= self.W_recurrent[layer].mask
+                eigvals = torch.linalg.eigvals(W).abs().max()
+                
+                if eigvals < 1e-6:
+                    eigvals = 1e-6
+                
+                W *= self.spectral_radius / eigvals
+                
+                self.W_in[layer].weight.copy_(W)
+                
+                # self.W_input.bias.data.zero_()
+                # self.W_out.bias.data.zero_()
+               
+                # self.W_in[layer].bias.data.zero_()
+                # self.W_recurrent[layer].bias.data.zero_()
+                
+                if reservoir:
+                    self.W_recurrent[layer].weight.requires_grad = False
+
+    
+    
+    def forward(self, X, eps_int=None, dt=0.1):
+        if eps_int is None:
+            eps_int = self.eps_int
+    
+        self.activations = {f"layer{l}": [] for l in range(self.N_layers)}
+    
+        batch_size = X.size(0)
+    
+        # Initialize hidden states: shape (N_layers, batch_size, N_neurons)
+        h = torch.zeros(self.N_layers, batch_size, self.N_neurons, device=X.device)
+        dh = torch.zeros_like(h)
+    
+        # Input projection
+        x_in = self.W_input(X.view(batch_size, -1))
+    
+        # Initialize previous state for steady-state check
+        h_prev = h.detach().clone()
+    
+        
+        k=0
+        while True:
+            k+=1
+            # Layer 0 update
+            dh[0] = -self.alpha * h[0] + torch.sin(x_in + self.W_recurrent[0](h[0]))
+            h[0] = h[0] + dh[0] * dt
+            self.activations["layer0"].append(h[0].detach().cpu().clone())
+    
+            # Updates for other layers
+            for l in range(1, self.N_layers):
+                dh[l] = -self.alpha * h[l] + torch.sin(
+                    self.W_in[l](h[l-1]) + self.W_recurrent[l](h[l])
+                )
+                h[l] = h[l] + dh[l] * dt
+                self.activations[f"layer{l}"].append(h[l].detach().cpu().clone())
+    
+            # Steady-state check
+            with torch.no_grad():
+                max_delta = max(torch.max(torch.abs(dh_layer)) for dh_layer in dh)
+                if max_delta < eps_int:
+                    break
+    
+        # Output projection from last layer
+        out = self.W_out(h[-1])
+        return out
+
 
 
 
