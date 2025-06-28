@@ -415,7 +415,8 @@ class Oscillator_RNN_dyn(Base_Model):
         
         self.alpha = 0.9
         
-        self.eps_int = 1e-1
+        self.eps_int = 5e-2
+        self.dt = 0.05
         
         self.sparsity = 0.2
         self.spectral_radius = 0.8
@@ -477,23 +478,23 @@ class Oscillator_RNN_dyn(Base_Model):
 
     
     
-    def forward(self, X, eps_int=None, dt=0.1):
+    def forward(self, X, eps_int=None, dt=None):
         if eps_int is None:
             eps_int = self.eps_int
-    
+        
+        if dt is None: 
+            dt = self.dt
         self.activations = {f"layer{l}": [] for l in range(self.N_layers)}
     
         batch_size = X.size(0)
     
         # Initialize hidden states: shape (N_layers, batch_size, N_neurons)
-        h = torch.zeros(self.N_layers, batch_size, self.N_neurons, device=X.device)
-        dh = torch.zeros_like(h)
+        h = [torch.zeros(batch_size, self.N_neurons, device=X.device) for _ in range(self.N_layers)]
+        dh = [torch.zeros(batch_size, self.N_neurons, device=X.device) for _ in range(self.N_layers)]
     
         # Input projection
         x_in = self.W_input(X.view(batch_size, -1))
     
-        # Initialize previous state for steady-state check
-        h_prev = h.detach().clone()
     
         
         k=0

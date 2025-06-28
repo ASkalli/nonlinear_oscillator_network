@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Jun 25 01:02:19 2025
+Created on Sat Jun 28 20:00:54 2025
 
 @author: Admin
 """
+
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -38,9 +39,9 @@ X_train_MNIST, Y_train_MNIST = next(iter(train_loader_MNIST))
 X_test_MNIST, Y_test_MNIST = next(iter(test_loader_MNIST))
 
 N_neurons_vec = [5, 10, 20, 30, 50, 75, 100]
-N_neurons_vec = [20]
+N_neurons_vec = [50]
 
-n_epochs = 1
+n_epochs = 15
 results = []
 
 stats = 1
@@ -60,9 +61,11 @@ for s in range(stats):
             "time_steady_state": 200    # number of repeated timesteps to reach steady state
         }
         
-        model = Oscillator_RNN(params=RNN_params)
+        model = Oscillator_RNN_dyn(params=RNN_params)
         
         model.init_esn_weights(reservoir = False)
+        model.dt = 0.1
+        model.eps_int = 0.1
         
         loss = nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
@@ -81,9 +84,9 @@ for s in range(stats):
 
 
 end_time = time.time()
-print(f'Total time = {end_time- start_time}')
+print(f'Total time = {end_time- start_time} s')
 
-with open('results_oscillator_net.pkl', 'wb') as f:
+with open('results_oscillator_dynass_dummy.pkl', 'wb') as f:
     pickle.dump(results, f)
 
 test_loss_vec = []
