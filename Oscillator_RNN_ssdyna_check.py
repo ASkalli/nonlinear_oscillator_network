@@ -59,7 +59,7 @@ T = RNN_params["time_steady_state"]
 # --- Forward Pass ---
 start_time = time.time()
 with torch.no_grad():
-    y_pred = model(x,5e-2,dt=0.1)
+    y_pred = model(x,5e-2,dt=0.05)
 end_time = time.time()
 
 print(f' Forward pass time {end_time - start_time}')

@@ -333,17 +333,37 @@ class Oscillator_RNN(Base_Model):
  
     
 class SparseLinear(nn.Module):
-    def __init__(self, in_features, out_features, sparsity=0.2, bias=True):
+    def __init__(self, in_features, out_features,spectral_radius = 0.8, sparsity=0.2, bias=True,sym = True):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
 
         self.weight = nn.Parameter(torch.empty(out_features, in_features))
-        self.register_buffer('mask', (torch.rand(out_features, in_features) < sparsity).float())
-
+        
+        if sym:
+            mask = self.gen_sparse_sym_mask(in_features, out_features, sparsity)
+        else:
+            mask = (torch.rand(out_features, in_features) < sparsity).float()
+            
         self.bias = nn.Parameter(torch.empty(out_features)) if bias else None
-
-        nn.init.kaiming_uniform_(self.weight, a=5**0.5)
+        
+        self.register_buffer('mask', mask)
+        
+        
+        # Initialize weights: uniform between -1 and 1
+        W = (2 * torch.rand(out_features, in_features) - 1) * mask
+        
+        # Spectral normalization (if square matrix)
+        if in_features == out_features:
+            eigvals = torch.linalg.eigvals(W).abs().max()
+            eigvals = eigvals if eigvals > 1e-6 else 1e-6  # Avoid division by zero
+            W *= spectral_radius / eigvals
+        
+        self.weight.data = W
+        
+        
+        
+        
         if self.bias is not None:
             fan_in = in_features
             bound = 1 / fan_in**0.5
@@ -355,7 +375,33 @@ class SparseLinear(nn.Module):
     def forward(self, X):
         return F.linear(X, self.weight * self.mask, self.bias)
     
- 
+    def gen_sparse_sym_mask(self,in_features, out_features,sparsity=0.2):
+        assert in_features == out_features, "Symmetric mask requires square weight matrix."
+        
+        size = in_features
+        mask = torch.zeros(size, size)
+        
+        # Number of unique pairs for sparsity (upper triangular without diagonal)
+        num_elements = size * (size - 1) // 2 + size
+        num_active = int(sparsity * num_elements)
+
+        # Get upper triangular indices
+        triu_indices = torch.triu_indices(size, size)
+        idx = torch.randperm(triu_indices.shape[1])[:num_active]
+
+        selected_rows = triu_indices[0, idx]
+        selected_cols = triu_indices[1, idx]
+
+        mask[selected_rows, selected_cols] = 1
+        mask[selected_cols, selected_rows] = 1  # Symmetry
+        
+        #diagonal set to ones for self coupling
+        
+        mask = mask + torch.eye(size)
+        
+        
+        return mask
+    
     
 class Oscillator_RNN_dyn(Base_Model):
     def __init__(self, params):
@@ -384,7 +430,7 @@ class Oscillator_RNN_dyn(Base_Model):
         ])
     
         self.W_recurrent =  nn.ModuleList([
-            SparseLinear(self.N_neurons, self.N_neurons,sparsity=0.2)
+            SparseLinear(self.N_neurons, self.N_neurons,sparsity=0.2,bias=True,sym=True)
             for _ in range(self.N_layers)
         ])
         
@@ -399,15 +445,15 @@ class Oscillator_RNN_dyn(Base_Model):
         
         with torch.no_grad():
             for layer in range(self.N_layers):
-                W = (2 * torch.rand(self.N_neurons, self.N_neurons) - 1)
-                W *= self.W_recurrent[layer].mask
-                eigvals = torch.linalg.eigvals(W).abs().max()
+                # W = (2 * torch.rand(self.N_neurons, self.N_neurons) - 1)
+                # W *= self.W_recurrent[layer].mask
+                # eigvals = torch.linalg.eigvals(W).abs().max()
                 
-                if eigvals < 1e-6:
-                    eigvals = 1e-6
+                # if eigvals < 1e-6:
+                #     eigvals = 1e-6
                 
-                W *= self.spectral_radius / eigvals
-                self.W_recurrent[layer].weight.copy_(W)
+                # W *= self.spectral_radius / eigvals
+                # self.W_recurrent[layer].weight.copy_(W)
                 
                 W = (2 * torch.rand(self.N_neurons, self.N_neurons) - 1)
                 #W *= self.W_recurrent[layer].mask
