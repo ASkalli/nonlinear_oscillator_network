@@ -10,6 +10,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import time
+import matplotlib.pyplot as plt
+import pdb
 
 
 
@@ -133,7 +135,7 @@ def train_BP_torch(model, n_epochs, train_loader, test_loader, loss, optimizer):
             Y_pred = model.forward(images)
             loss_value = loss(Y_pred,labels)
             train_loss_value =loss_value.item()
-            if i%10==0:
+            if i%5==0:
                 train_loss.append(train_loss_value)
             
             #backward pass
@@ -147,21 +149,21 @@ def train_BP_torch(model, n_epochs, train_loader, test_loader, loss, optimizer):
                 model.eval()
                 correct = 0 
                 total = 0
-                
-                for images, labels in test_loader:
-                    images = images.to(device)
-                    labels = labels.to(device)
-                    Y_pred = model.forward(images)
-                    _, predicted = torch.max(Y_pred.data, 1)
+                with torch.no_grad():
+                    for images, labels in test_loader:
+                        images = images.to(device)
+                        labels = labels.to(device)
+                        Y_pred = model.forward(images)
+                        _, predicted = torch.max(Y_pred.data, 1)
+                        
+                        total += labels.size(0)
+                        correct += (predicted == labels).sum().item()
+                        test_loss_minibatches.append(loss(Y_pred,labels).item())
                     
-                    total += labels.size(0)
-                    correct += (predicted == labels).sum().item()
-                    test_loss_minibatches.append(loss(Y_pred,labels).item())
-                
-                accuracy = ( 100*correct/total)
-                test_acc.append(accuracy)
-                test_loss.append(np.mean(test_loss_minibatches))
-                
+                    accuracy = ( 100*correct/total)
+                    test_acc.append(accuracy)
+                    test_loss.append(np.mean(test_loss_minibatches))
+                    
                 
                 print(f'Epoch [{epoch+1}/{n_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss_value.item()}, Test Accuracy: {accuracy}%')
 
@@ -174,7 +176,8 @@ def train_BP_torch(model, n_epochs, train_loader, test_loader, loss, optimizer):
         'train_loss' : train_loss,
         'test_loss':test_loss ,
         'test_acc' : test_acc ,
-        'time' : train_time
+        'time' : train_time,
+        'n_params': model.count_parameters()
         
         }
     return data_dict
@@ -417,12 +420,16 @@ class Oscillator_RNN_dyn(Base_Model):
         
         self.eps_int = 5e-2
         self.dt = 0.05
+        self.max_steps = 1000
+        self.k = 0
+        self.k_vec = []
         
         self.sparsity = 0.2
         self.spectral_radius = 0.8
         
         self.activations = {}
-
+        self.save_activations = False
+        
         self.W_input = nn.Linear(in_features=self.N_in, out_features = self.N_neurons)
         
         self.W_in = nn.ModuleList([
@@ -445,6 +452,13 @@ class Oscillator_RNN_dyn(Base_Model):
         self.spectral_radius = spectral_radius
         
         with torch.no_grad():
+            
+            W = (2 * torch.rand(self.N_neurons, self.N_in) - 1)/100
+            #W *= self.W_recurrent[layer].mask
+
+            
+            self.W_input.weight.data.copy_(W)
+            
             for layer in range(self.N_layers):
                 # W = (2 * torch.rand(self.N_neurons, self.N_neurons) - 1)
                 # W *= self.W_recurrent[layer].mask
@@ -478,13 +492,17 @@ class Oscillator_RNN_dyn(Base_Model):
 
     
     
-    def forward(self, X, eps_int=None, dt=None):
+    def forward(self, X, eps_int=None, dt=None,save_activations = None):
         if eps_int is None:
             eps_int = self.eps_int
         
         if dt is None: 
             dt = self.dt
-        self.activations = {f"layer{l}": [] for l in range(self.N_layers)}
+        if save_activations is None:
+            save_activations = self.save_activations
+        
+        if save_activations:
+            self.activations = {f"layer{l}": [] for l in range(self.N_layers)}
     
         batch_size = X.size(0)
     
@@ -497,13 +515,14 @@ class Oscillator_RNN_dyn(Base_Model):
     
     
         
-        k=0
+        self.k=0
         while True:
-            k+=1
+            self.k+=1
             # Layer 0 update
             dh[0] = -self.alpha * h[0] + torch.sin(x_in + self.W_recurrent[0](h[0]))
             h[0] = h[0] + dh[0] * dt
-            self.activations["layer0"].append(h[0].detach().cpu().clone())
+            if save_activations:
+                self.activations["layer0"].append(h[0].detach().cpu().clone())
     
             # Updates for other layers
             for l in range(1, self.N_layers):
@@ -511,14 +530,29 @@ class Oscillator_RNN_dyn(Base_Model):
                     self.W_in[l](h[l-1]) + self.W_recurrent[l](h[l])
                 )
                 h[l] = h[l] + dh[l] * dt
-                self.activations[f"layer{l}"].append(h[l].detach().cpu().clone())
-    
+                if save_activations:
+                    self.activations[f"layer{l}"].append(h[l].detach().cpu().clone())
+                
+            
+            # if self.k >= 1000:
+            #     print(f"[Warning] High number of steps: {self.k}")
+            #     pdb.set_trace()
+                # layer = 'layer1'
+
+                # rnn_out = torch.stack(self.activations[layer]).squeeze().numpy()  # shape: (T, hidden_size)
+                # plt.plot(rnn_out[:,50,:])
+
+                
             # Steady-state check
             with torch.no_grad():
                 max_delta = max(torch.max(torch.abs(dh_layer)) for dh_layer in dh)
-                if max_delta < eps_int:
-                    break
-    
+            if max_delta < eps_int or self.k >= self.max_steps:
+                if self.k >= self.max_steps:
+                    print(f"[Warning] Max steps {self.max_steps} reached. max_delta={max_delta:.5f}")
+                break
+            
+                
+        self.k_vec.append(self.k)
         # Output projection from last layer
         out = self.W_out(h[-1])
         return out
@@ -526,6 +560,156 @@ class Oscillator_RNN_dyn(Base_Model):
 
 
 
+
+def train_online_pop_NN(model, n_epochs, train_loader, test_loader, loss, optimizer):
+    "function to train a model using the population based training algorithm,  returns the accuracy and best reward lists"
+    
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    model.to(device)
+
+    print(f"Using {device} device")
+    print(model)
+    
+    best_reward = []
+    #array to store the accuracy of the model
+    
+    test_acc = []
+    train_loss = []
+    test_loss = []
+    
+    #dict to return
+    
+    data_dict = {}
+    start_time = time.time()
+    for epoch in range(n_epochs):
+        model.eval()
+        for i, (features,labels) in enumerate(train_loader):
+            
+            coordinates = optimizer.ask()
+            rewards_list = []
+            for k in range(coordinates.shape[0]):
+                if device == 'cuda':
+                    features = features.to(device)
+                    labels = labels.to(device)
+                    Y_pred = model.forward_pass_params(coordinates[k,:],features)
+                if device == 'cpu':
+                    Y_pred = model.forward_pass_params(coordinates[k,:],features)    
+                loss_value = loss(Y_pred,labels)
+                rewards_list.append(loss_value.detach().cpu().item())
+            
+            rewards = np.array(rewards_list)[:,np.newaxis]
+            optimizer.tell(rewards)
+            best_params = coordinates[np.argmin(rewards),:]
+            train_loss.append(np.min(rewards))
+            #print('\r{i+1}',end='')
+            #print accuracy every 100 steps for the test set
+            
+            if i == 0 or (i+1) % 50 == 0:
+                test_loss_minibatches = []
+                model.eval()
+                correct = 0 
+                total = 0
+                with torch.no_grad():
+                    for features, labels in test_loader:
+                        features = features.to(device)
+                        labels = labels.to(device)
+                        Y_pred = model.forward_pass_params(best_params,features)
+                        loss_value = loss(Y_pred,labels)
+                        _, predicted = torch.max(Y_pred.data, 1)
+                        total += labels.size(0)
+                        correct += (predicted == labels).sum().item()
+                        test_loss_minibatches.append(loss(Y_pred,labels).item())
+                        
+                    accuracy = ( 100*correct/total)
+                    test_acc.append(accuracy)
+                    test_loss.append(np.mean(test_loss_minibatches))
+                    print(f'Epoch [{epoch+1}/{n_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss_value.item()}, Test Accuracy: {accuracy}%')
+    return data_dict
+    
+
+def train_online_SPSA_NN(model, n_epochs, train_loader, test_loader, loss, spsa_optimizer,adam_optimizer):
+    "function to train a model using the population based training algorithm,  returns the accuracy and best reward lists"
+    
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    model.to(device)
+
+    print(f"Using {device} device")
+    print(model)
+    
+    best_reward = []
+    #array to store the accuracy of the model
+    
+    test_acc = []
+    train_loss = []
+    test_loss = []
+    
+    #dict to return
+    
+    data_dict = {}
+    start_time = time.time()
+    for epoch in range(n_epochs):
+        model.eval()
+        for i, (features,labels) in enumerate(train_loader):
+            
+            params_plus,params_minus = spsa_optimizer.perturb_parameters()
+            
+            
+            if device == 'cuda':
+                features = features.to(device)
+                labels = labels.to(device)
+                Y_pred_plus = model.forward_pass_params(params_plus,features)
+                Y_pred_minus = model.forward_pass_params(params_minus,features)
+            if device == 'cpu':
+                Y_pred_plus = model.forward_pass_params(params_plus,features)
+                Y_pred_minus = model.forward_pass_params(params_minus,features)
+                
+            loss_value_plus = loss(Y_pred_plus,labels)
+            loss_value_minus = loss(Y_pred_minus,labels)
+            
+            reward_plus = loss_value_plus.detach().cpu().item()
+            reward_minus = loss_value_minus.detach().cpu().item()
+            
+            grad_spsa = spsa_optimizer.approximate_gradient(reward_plus ,reward_minus)
+            step = adam_optimizer.step(grad_spsa)
+            
+            current_params= spsa_optimizer.update_parameters_step(step)
+
+            train_loss.append(np.min([reward_plus,reward_minus]))
+            #print('\r{i+1}',end='')
+            #print accuracy every 100 steps for the test set
+            if i == 0 or (i+1) % 50 == 0:
+                test_loss_minibatches = []
+                model.eval()
+                correct = 0 
+                total = 0
+                with torch.no_grad():
+                    for features, labels in test_loader:
+                        features = features.to(device)
+                        labels = labels.to(device)
+                        Y_pred = model.forward_pass_params(current_params,features)
+                        loss_value = loss(Y_pred,labels)
+                        _, predicted = torch.max(Y_pred.data, 1)
+                        total += labels.size(0)
+                        correct += (predicted == labels).sum().item()
+                        test_loss_minibatches.append(loss(Y_pred,labels).item())
+                    accuracy = ( 100*correct/total)
+                    test_acc.append(accuracy)
+                    test_loss.append(np.mean(test_loss_minibatches))
+                    print(f'Epoch [{epoch+1}/{n_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss_value.item()}, Test Accuracy: {accuracy}%')
+    end_time = time.time()
+    train_time = end_time - start_time
+    print(f'Total time: {(end_time - start_time)/3600}h')
+    
+    data_dict = {
+        'train_loss' : train_loss,
+        'test_loss':test_loss ,
+        'test_acc' : test_acc ,
+        'time' : train_time,
+        'n_params': model.count_parameters()
+        
+        }
+    
+    return data_dict
 
 
 
