@@ -6,10 +6,7 @@ Created on Sat Jul  5 12:02:45 2025
 """
 import numpy as np
 import matplotlib.pyplot as plt
-from CMA_obj import CMA_opt
-from PEPG_obj import PEPG_opt
-from SPSA_obj import SPSA_opt
-
+from datetime import datetime
 from numpy import asarray
 from numpy import savetxt
 from NN_utils import *
@@ -35,7 +32,7 @@ transform_data = transforms.Compose([
 MNIST_train = datasets.FashionMNIST(root='./data', train=True, transform=transform_data, download=True)
 MNIST_test = datasets.FashionMNIST(root='./data', train=False, transform=transform_data, download=True)
 
-train_loader_MNIST = torch.utils.data.DataLoader(dataset=MNIST_train, batch_size=100, shuffle=True)
+train_loader_MNIST = torch.utils.data.DataLoader(dataset=MNIST_train, batch_size=1000, shuffle=True)
 test_loader_MNIST = torch.utils.data.DataLoader(dataset=MNIST_test, batch_size=10000, shuffle=False)
 
 X_train_MNIST, Y_train_MNIST = next(iter(train_loader_MNIST))
@@ -43,12 +40,14 @@ X_test_MNIST, Y_test_MNIST = next(iter(test_loader_MNIST))
 
 
 N_neurons_vec = [5, 10, 20, 30, 50, 75, 100]
-N_neurons_vec = [50]
+N_neurons_vec = [30]
 
-n_epochs = 25
+n_epochs = 500
 results = []
 
 stats = 1
+
+print("Script started at:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 start_time = time.time()
 for s in range(stats):
@@ -65,19 +64,25 @@ for s in range(stats):
          
         model = Oscillator_RNN_dyn(params=RNN_params)
          
-        model.init_esn_weights(reservoir = False)
+        model.init_esn_weights(reservoir = True)
         model.dt = 0.1
-        model.eps_int = 0.1
+        model.eps_int = 1e-2
+        model.alpha=0.9
+        model.max_steps=500
         model.save_activations = False
+        
+        # for layer in model.W_in:
+        #     for param in layer.parameters():
+        #         param.requires_grad = False
+                
+        # model.W_input.weight.requires_grad = False
+        # model.W_input.bias.requires_grad = False
          
         loss = nn.CrossEntropyLoss()
         
         
         N_dim = model.count_parameters()
-        #specify we don't need the computation graph to keep track of the gradients, we will use SPSA to update the weights
-        with torch.no_grad():
-            for param in model.parameters():
-                param.requires_grad = False
+
         loss = nn.CrossEntropyLoss()
         # learning parameters
         
@@ -95,8 +100,14 @@ for s in range(stats):
         Adam = AdamOptimizer(init_pos, lr=1e-3, beta1=0.9, beta2=0.9, epsilon=1e-8)
         
         print(f'Using {n_neurons} per layer, run {s+1}, number of parameters {model.count_parameters()}')
-        D = train_online_SPSA_NN(model, n_epochs, train_loader_MNIST, test_loader_MNIST, loss, SPSA_optimizer,Adam)
+        D = train_online_SPSA_NN(model, n_epochs, train_loader_MNIST, test_loader_MNIST, loss, SPSA_optimizer,adam_optimizer=Adam)
         results.append(D)
+        
+        del model
+        del SPSA_optimizer
+        del Adam
+        torch.cuda.empty_cache()
+        gc.collect()
         
         
 end_time = time.time()

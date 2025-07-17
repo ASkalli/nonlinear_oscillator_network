@@ -8,9 +8,7 @@ Created on Wed Jun 25 23:41:29 2025
 
 import numpy as np
 import matplotlib.pyplot as plt
-from CMA_obj import CMA_opt
-from PEPG_obj import PEPG_opt
-from SPSA_obj import SPSA_opt
+
 
 from numpy import asarray
 from numpy import savetxt
@@ -22,27 +20,27 @@ from torch.utils.data import DataLoader
 import time
 
 torch.set_default_dtype(torch.float32)  # Global default for speed zoooom !
-np.random.seed(42)
-torch.manual_seed(42)
+# np.random.seed(42)
+# torch.manual_seed(42)
 
 # --- Parameters ---
 RNN_params = {
     "N_in": 784,
     "N_out": 10,
-    "N_neurons": 30,
+    "N_neurons": 50,
     "N_layers": 3,
     "time_steady_state": 1000
 }
 
 
 model = Oscillator_RNN_dyn(params=RNN_params)
-model.init_esn_weights(reservoir = False)
+model.init_esn_weights(reservoir = True)
 # Set model to eval mode and CPU (or use GPU if preferred)
 model.eval()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)
+model.max_steps=1000
 model.alpha = 0.9
-
 
 # --- Load one FashionMNIST sample ---
 transform = transforms.Compose([transforms.ToTensor()])
@@ -56,10 +54,11 @@ img, label = next(iter(loader))
 x = img.to(device)  # (1, 784)
 T = RNN_params["time_steady_state"]
 
+#model = torch.compile(model)
 # --- Forward Pass ---
 start_time = time.time()
 with torch.no_grad():
-    y_pred = model(x,5e-2,dt=0.1,save_activations=True)
+    y_pred = model(x,eps_int=1e-2,dt=0.1,save_activations=True)
 end_time = time.time()
 
 print(f' Forward pass time {end_time - start_time}')

@@ -25,20 +25,22 @@ class Base_Model(nn.Module):
 
     def get_params(self):
         return torch.cat([
-            p.view(-1).detach().cpu() for p in self.parameters()
+            p.view(-1).detach().cpu() for p in self.parameters()  if p.requires_grad
         ])
 
     def set_params(self, params_to_send):
         current_idx = 0
         for param in self.parameters():
-            n = param.numel()
-            new_param = torch.from_numpy(params_to_send[current_idx:current_idx + n]).view(param.shape)
-            param.data.copy_(new_param)
-            current_idx += n
+            if param.requires_grad:
+                n = param.numel()
+                new_param = torch.from_numpy(params_to_send[current_idx:current_idx + n]).view(param.shape)
+                param.data.copy_(new_param)
+                current_idx += n
 
     def forward_pass_params(self, params_to_send, X):
-        self.set_params(params_to_send)
-        return self.forward(X)
+        with torch.no_grad():
+            self.set_params(params_to_send)
+            return self.forward(X)
 
 
 class RNN_network(Base_Model):
@@ -267,7 +269,7 @@ class Oscillator_RNN(Base_Model):
         ])
         self.W_out = nn.Linear(in_features = self.N_neurons, out_features = self.N_out)
         
-        self.alpha = 0.9
+        self.alpha = 3
         
 
         # Optional ESN-style weight customization
@@ -416,15 +418,15 @@ class Oscillator_RNN_dyn(Base_Model):
         self.N_layers = params["N_layers"]
         self.T_SS = params["time_steady_state"]
         
-        self.alpha = 0.9
+        self.alpha = 3
         
-        self.eps_int = 5e-2
-        self.dt = 0.05
+        self.eps_int = 1e-2
+        self.dt = 0.1
         self.max_steps = 1000
         self.k = 0
         self.k_vec = []
         
-        self.sparsity = 0.2
+        self.sparsity = 0.1
         self.spectral_radius = 0.8
         
         self.activations = {}
@@ -434,11 +436,11 @@ class Oscillator_RNN_dyn(Base_Model):
         
         self.W_in = nn.ModuleList([
             nn.Linear(self.N_neurons, self.N_neurons)
-            for _ in range(self.N_layers)
+            for _ in range(self.N_layers-1)
         ])
     
         self.W_recurrent =  nn.ModuleList([
-            SparseLinear(self.N_neurons, self.N_neurons,sparsity=0.2,bias=True,sym=True)
+            SparseLinear(self.N_neurons, self.N_neurons,sparsity=self.sparsity,bias=True,sym=True)
             for _ in range(self.N_layers)
         ])
         
@@ -446,7 +448,7 @@ class Oscillator_RNN_dyn(Base_Model):
         
 
 
-    def init_esn_weights(self, spectral_radius=0.8, sparsity=0.2, reservoir=False):
+    def init_esn_weights(self, spectral_radius=0.8, sparsity=0.2, reservoir=True):
         
         self.sparsity = sparsity
         self.spectral_radius = spectral_radius
@@ -454,21 +456,11 @@ class Oscillator_RNN_dyn(Base_Model):
         with torch.no_grad():
             
             W = (2 * torch.rand(self.N_neurons, self.N_in) - 1)/100
-            #W *= self.W_recurrent[layer].mask
 
             
             self.W_input.weight.data.copy_(W)
             
             for layer in range(self.N_layers):
-                # W = (2 * torch.rand(self.N_neurons, self.N_neurons) - 1)
-                # W *= self.W_recurrent[layer].mask
-                # eigvals = torch.linalg.eigvals(W).abs().max()
-                
-                # if eigvals < 1e-6:
-                #     eigvals = 1e-6
-                
-                # W *= self.spectral_radius / eigvals
-                # self.W_recurrent[layer].weight.copy_(W)
                 
                 W = (2 * torch.rand(self.N_neurons, self.N_neurons) - 1)
                 #W *= self.W_recurrent[layer].mask
@@ -479,16 +471,12 @@ class Oscillator_RNN_dyn(Base_Model):
                 
                 W *= self.spectral_radius / eigvals
                 
-                self.W_in[layer].weight.copy_(W)
+                self.W_in[layer-1].weight.copy_(W)
                 
-                # self.W_input.bias.data.zero_()
-                # self.W_out.bias.data.zero_()
-               
-                # self.W_in[layer].bias.data.zero_()
-                # self.W_recurrent[layer].bias.data.zero_()
                 
                 if reservoir:
                     self.W_recurrent[layer].weight.requires_grad = False
+                    self.W_recurrent[layer].bias.requires_grad = False
 
     
     
@@ -527,7 +515,7 @@ class Oscillator_RNN_dyn(Base_Model):
             # Updates for other layers
             for l in range(1, self.N_layers):
                 dh[l] = -self.alpha * h[l] + torch.sin(
-                    self.W_in[l](h[l-1]) + self.W_recurrent[l](h[l])
+                    self.W_in[l-1](h[l-1]) + self.W_recurrent[l](h[l])
                 )
                 h[l] = h[l] + dh[l] * dt
                 if save_activations:
@@ -556,6 +544,27 @@ class Oscillator_RNN_dyn(Base_Model):
         # Output projection from last layer
         out = self.W_out(h[-1])
         return out
+    
+    def normalize_spectral_radius(self):
+        with torch.no_grad():
+            for layer in range(self.N_layers):
+                # Normalize W_in[layer]
+                W_in = self.W_in[layer].weight.data
+                eigvals_in = torch.linalg.eigvals(W_in).abs().max()
+                eigvals_in = max(eigvals_in, 1e-6)
+                W_in *= self.spectral_radius / eigvals_in
+                self.W_in[layer].weight.data.copy_(W_in)
+    
+                # Normalize SparseLinear recurrent weights
+                W_rec = self.W_recurrent[layer].weight.data
+                W_rec_masked = W_rec * self.W_recurrent[layer].mask  # Apply mask before eigvals
+    
+                eigvals_rec = torch.linalg.eigvals(W_rec_masked).abs().max()
+                eigvals_rec = max(eigvals_rec, 1e-6)
+    
+                # Scale and reapply mask (to avoid changing masked-zero values)
+                W_rec_scaled = W_rec_masked * (self.spectral_radius / eigvals_rec)
+                self.W_recurrent[layer].weight.data.copy_(W_rec_scaled)
 
 
 
@@ -585,15 +594,15 @@ def train_online_pop_NN(model, n_epochs, train_loader, test_loader, loss, optimi
         model.eval()
         for i, (features,labels) in enumerate(train_loader):
             
+            if device == 'cuda':
+                features = features.to(device)
+                labels = labels.to(device)
+            
             coordinates = optimizer.ask()
             rewards_list = []
             for k in range(coordinates.shape[0]):
-                if device == 'cuda':
-                    features = features.to(device)
-                    labels = labels.to(device)
-                    Y_pred = model.forward_pass_params(coordinates[k,:],features)
-                if device == 'cpu':
-                    Y_pred = model.forward_pass_params(coordinates[k,:],features)    
+                
+                Y_pred = model.forward_pass_params(coordinates[k,:],features)  
                 loss_value = loss(Y_pred,labels)
                 rewards_list.append(loss_value.detach().cpu().item())
             
@@ -601,13 +610,14 @@ def train_online_pop_NN(model, n_epochs, train_loader, test_loader, loss, optimi
             optimizer.tell(rewards)
             best_params = coordinates[np.argmin(rewards),:]
             train_loss.append(np.min(rewards))
+            
             #print('\r{i+1}',end='')
             #print accuracy every 100 steps for the test set
             
-            if i == 0 or (i+1) % 50 == 0:
+            if i == 0 or (i+1) % 10 == 0:
                 test_loss_minibatches = []
                 model.eval()
-                correct = 0 
+                correct = 0
                 total = 0
                 with torch.no_grad():
                     for features, labels in test_loader:
@@ -624,6 +634,21 @@ def train_online_pop_NN(model, n_epochs, train_loader, test_loader, loss, optimi
                     test_acc.append(accuracy)
                     test_loss.append(np.mean(test_loss_minibatches))
                     print(f'Epoch [{epoch+1}/{n_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss_value.item()}, Test Accuracy: {accuracy}%')
+     
+    end_time = time.time()
+    train_time = end_time - start_time
+    print(f'Total time: {(end_time - start_time)/3600}h')
+    
+    data_dict = {
+        'train_loss' : train_loss,
+        'test_loss':test_loss ,
+        'test_acc' : test_acc ,
+        'time' : train_time,
+        'n_params': model.count_parameters()
+        
+        }
+    
+    
     return data_dict
     
 
@@ -670,14 +695,26 @@ def train_online_SPSA_NN(model, n_epochs, train_loader, test_loader, loss, spsa_
             reward_minus = loss_value_minus.detach().cpu().item()
             
             grad_spsa = spsa_optimizer.approximate_gradient(reward_plus ,reward_minus)
-            step = adam_optimizer.step(grad_spsa)
             
-            current_params= spsa_optimizer.update_parameters_step(step)
-
+            if adam_optimizer is None:
+                
+                current_params= spsa_optimizer.update_parameters(grad_spsa) #update params with SPSA
+                
+            else:
+               
+                step = adam_optimizer.step(grad_spsa)
+                current_params= spsa_optimizer.update_parameters_step(step) #update params with SPSA
+                
+            model.set_params(current_params) #set model params
+            #model.normalize_spectral_radius() #renormalize the spectral radius 
+            #spsa_optimizer.params = model.get_params().detach().numpy() # give SPSA the noramlized parameters
+            #current_params =  model.get_params().detach().numpy()
+            
             train_loss.append(np.min([reward_plus,reward_minus]))
-            #print('\r{i+1}',end='')
-            #print accuracy every 100 steps for the test set
-            if i == 0 or (i+1) % 50 == 0:
+            
+            
+            #print accuracy every periodically for the test set
+            if i == 0 or (i+1) % 10 == 0:
                 test_loss_minibatches = []
                 model.eval()
                 correct = 0 
@@ -713,7 +750,83 @@ def train_online_SPSA_NN(model, n_epochs, train_loader, test_loader, loss, spsa_
 
 
 
+"""
+SMALL MODELS HERE TO DEBUG:
+    1- Linear model
+    2- Simple multilayer perceptron model
+    3- Small convnet
+"""
 
+class Linear_model(Base_Model):
+    #simple linear model to debug when things seem weird
+    def __init__(self, params):
+        super(Linear_model, self).__init__()
+        self.N_in = params["N_in"]
+        self.N_out = params["N_out"]
+        self.W = nn.Linear(self.N_in, self.N_out)
+        
+    def forward(self, X):
+        y = self.W(X.view(X.size(0), -1))  # flatten image
+        return y  # return logits directly 
 
+class simple_FFNN(Base_Model):
+    #simple multilayer perceptron
+    def __init__(self, params):
+        super(simple_FFNN, self).__init__()
+        
+        self.N_in = params["N_in"]
+        self.N_out = params["N_out"]
+        self.N_neurons = params["N_neurons"]
+        self.N_hidden_layers = params["N_layers"]  # default = 2 hidden layers
 
+        # Input layer
+        self.input_layer = nn.Linear(self.N_in, self.N_neurons)
+        
+        # Hidden layers
+        self.hidden_layers = nn.ModuleList([
+            nn.Linear(self.N_neurons, self.N_neurons)
+            for _ in range(self.N_hidden_layers - 1)
+        ])
+        
+        # Output layer
+        self.output_layer = nn.Linear(self.N_neurons, self.N_out)
+        
+        self.activation = nn.Tanh()
+    
+    def forward(self, X):
+        x = X.view(X.size(0), -1)  # Flatten input
+        
+        x = self.activation(self.input_layer(x))
+        for layer in self.hidden_layers:
+            x = self.activation(layer(x))
+        
+        x = self.output_layer(x)
+        return x  # logits
+        
 
+#small convnet to save on parameters
+class Tiny_convnet(Base_Model):
+      
+    def __init__(self):
+        super(Tiny_convnet, self).__init__()
+            
+        # Convolutional layer (sees 28x28x1 image tensor)
+        self.conv1 = nn.Conv2d(1, 8, kernel_size=5, stride=1, padding=2)  # Output: 28x28x8
+        # Max Pooling layer (reduces size to 14x14x8)
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)  # Output: 14x14x8
+        # Convolutional layer (sees 14x14x8 image tensor)
+        self.conv2 = nn.Conv2d(8, 16, kernel_size=5, stride=1, padding=2)  # Output: 14x14x16
+        # Max Pooling layer (reduces size to 7x7x16)
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)  # Output: 7x7x16
+        # Fully connected layer, adjusted for the output size of the last max pooling layer
+        self.fc = nn.Linear(7 * 7 * 16, 10)  # 10 output classes
+        
+    def forward(self, x):
+        x = F.relu(self.conv1(x))
+        x = self.pool1(x)  # Apply first max pooling
+        x = F.relu(self.conv2(x))
+        x = self.pool2(x)  # Apply second max pooling
+        # Flatten the output for the fully connected layer
+        x = x.view(x.size(0), -1)  # Flatten
+        x = self.fc(x)
+        return x

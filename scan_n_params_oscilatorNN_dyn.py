@@ -8,9 +8,6 @@ Created on Sat Jun 28 20:00:54 2025
 
 import numpy as np
 import matplotlib.pyplot as plt
-from CMA_obj import CMA_opt
-from PEPG_obj import PEPG_opt
-from SPSA_obj import SPSA_opt
 
 from numpy import asarray
 from numpy import savetxt
@@ -45,12 +42,12 @@ X_train_MNIST, Y_train_MNIST = next(iter(train_loader_MNIST))
 X_test_MNIST, Y_test_MNIST = next(iter(test_loader_MNIST))
 
 N_neurons_vec = [5, 10, 20, 30, 50, 75, 100]
-#N_neurons_vec = [50]
+N_neurons_vec = [50]
 
-n_epochs = 10
+n_epochs = 30
 results = []
 
-stats = 3
+stats = 1
 
 start_time = time.time()
 for s in range(stats):
@@ -69,10 +66,22 @@ for s in range(stats):
         
         model = Oscillator_RNN_dyn(params=RNN_params)
         
-        model.init_esn_weights(reservoir = False)
+        
+        
+        model.init_esn_weights(reservoir = True)
         model.dt = 0.1
-        model.eps_int = 0.1
+        model.eps_int = 1e-2
+        model.alpha=0.9
+        model.max_steps=500
         model.save_activations = False
+        
+        # for layer in model.W_in:
+        #     for param in layer.parameters():
+        #         param.requires_grad = False
+                
+        # model.W_input.weight.requires_grad = False
+        # model.W_input.bias.requires_grad = False
+        
         
         loss = nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)

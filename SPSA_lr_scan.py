@@ -12,9 +12,7 @@ Created on Sat Jul  5 12:02:45 2025
 """
 import numpy as np
 import matplotlib.pyplot as plt
-from CMA_obj import CMA_opt
-from PEPG_obj import PEPG_opt
-from SPSA_obj import SPSA_opt
+
 
 from numpy import asarray
 from numpy import savetxt
@@ -31,6 +29,12 @@ from optimization_algorithms import *
 
 #use SPSA to optimize The Neural network
 
+
+
+# np.random.seed(42)
+# torch.manual_seed(42)
+
+
 #load fashion MNIST DATASET
 
 transform_data = transforms.Compose([
@@ -41,17 +45,17 @@ transform_data = transforms.Compose([
 MNIST_train = datasets.FashionMNIST(root='./data', train=True, transform=transform_data, download=True)
 MNIST_test = datasets.FashionMNIST(root='./data', train=False, transform=transform_data, download=True)
 
-train_loader_MNIST = torch.utils.data.DataLoader(dataset=MNIST_train, batch_size=100, shuffle=True)
+train_loader_MNIST = torch.utils.data.DataLoader(dataset=MNIST_train, batch_size=1000, shuffle=True)
 test_loader_MNIST = torch.utils.data.DataLoader(dataset=MNIST_test, batch_size=10000, shuffle=False)
 
 X_train_MNIST, Y_train_MNIST = next(iter(train_loader_MNIST))
 X_test_MNIST, Y_test_MNIST = next(iter(test_loader_MNIST))
 
 
-lr_vec = [1e-4 ,5e-4, 1e-3,5e-3,1e-2]
-n_neurons = 50
+lr_vec = [1e-3]
+n_neurons = 30
 
-n_epochs = 25
+n_epochs = 300
 results = []
 
 stats = 1
@@ -71,20 +75,23 @@ for s in range(stats):
          
         model = Oscillator_RNN_dyn(params=RNN_params)
          
-        model.init_esn_weights(reservoir = False)
+        model.init_esn_weights(reservoir = True)
         model.dt = 0.1
-        model.eps_int = 0.1
+        model.eps_int = 1e-2
+        model.alpha=0.9
+        model.max_steps=500
         model.save_activations = False
          
         loss = nn.CrossEntropyLoss()
         print(f'Using {n_neurons} per layer, run {s+1}, number of parameters {model.count_parameters()}, lr = {lr}')
         
         N_dim = model.count_parameters()
-        #specify we don't need the computation graph to keep track of the gradients, we will use SPSA to update the weights
-        with torch.no_grad():
-            for param in model.parameters():
-                param.requires_grad = False
-        loss = nn.CrossEntropyLoss()
+        # for layer in model.W_in:
+        #     for param in layer.parameters():
+        #         param.requires_grad = False
+                
+        # model.W_input.weight.requires_grad = False
+        # model.W_input.bias.requires_grad = False
         # learning parameters
         
         init_pos = model.get_params()
@@ -104,12 +111,17 @@ for s in range(stats):
         D = train_online_SPSA_NN(model, n_epochs, train_loader_MNIST, test_loader_MNIST, loss, SPSA_optimizer,Adam)
         results.append(D)
         
+        del model
+        del SPSA_optimizer
+        torch.cuda.empty_cache()
+        gc.collect()
+        
         
 end_time = time.time()
 print(f'Total time = {end_time- start_time} s')
 
-with open('results_oscillator_dynass_SPSA_lr_scan.pkl', 'wb') as f:
-    pickle.dump(results, f)     
+# with open('results_oscillator_dynass_SPSA_test_norm_spectralrad.pkl', 'wb') as f:
+#     pickle.dump(results, f)     
         
 test_loss_vec = []
 test_loss_std = []
@@ -122,7 +134,7 @@ idx_plot = -5  # average over the last 5 epochs
 
 dummy = np.reshape(results, [stats, len(lr_vec)])
 
-for i in range(len(N_neurons_vec)):
+for i in range(len(lr_vec)):
     train_loss_runs = []
     test_loss_runs = []
     test_acc_runs = []
@@ -155,7 +167,7 @@ plt.fill_between(lr_vec,
                  np.array(test_acc_vec) - np.array(test_acc_std),
                  np.array(test_acc_vec) + np.array(test_acc_std),
                  alpha=0.3)
-plt.xlabel('Number of parameters')
+plt.xlabel('Learning rate')
 plt.ylabel('Test Accuracy')
 plt.grid(True)
 plt.legend()
@@ -175,7 +187,7 @@ plt.fill_between(lr_vec,
                  np.array(train_loss_vec) + np.array(train_loss_std),
                  alpha=0.3)
 
-plt.xlabel('Number of parameters')
+plt.xlabel('Learning rate')
 plt.ylabel('CCE Loss')
 plt.grid(True)
 plt.legend()
