@@ -104,7 +104,7 @@ This script implements several gradient-free and low-level optimization algorith
 
 These optimizers can be plugged into any model that supports a `.forward_pass_params()` method, such as those in `NN_utils.py`.
 
-##  Other scripts:
+##  Other scripts / notebooks:
 
 I have many other scripts then that call function / classes of the two most important .py files explained above. These other scripts are often organized in the following structure: 
 
@@ -115,6 +115,17 @@ I have many other scripts then that call function / classes of the two most impo
  - save data and plot it
  - often a for loop around this to study hyperparameter behavior
 
+##  Saving Data:
+
+Data is saved using the Pickle library which allows for saving variables and importing them back in python, I think dealign with just .txt or .csv is mad. The training funcitons return a dictionary "D" which has the following self explanatory keys: 
+
+D = ['train_loss' : train_loss,
+        'test_loss':test_loss ,
+        'test_acc' : test_acc ,
+        'time' : train_time,
+        'n_params': model.count_parameters()]
+
+Over many loops when scanning parameters, D is appended to a variable I call results which is the one saved with Pickle.
 ## References and useful resources
 
  - My previous simpler repo that implements the model free algorithms used here: https://github.com/ASkalli/learning_strategies and the related arxiv paper : https://arxiv.org/abs/2503.16943
