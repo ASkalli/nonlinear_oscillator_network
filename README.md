@@ -1,6 +1,6 @@
 # ODE based Physical Neural Network (PNN) trained with model-free methods
 
-This Github repo contains all my code implementing an ODE based dynamical system and using it as a recurrent neural network. This is done to study model-free optimization on a physically plausible NN structure. All the code is implemented using pytorch and numpy. I used ChatGPT to help format my markdown hence the cringe emojis ^^. Here is a small overview of the most important files I use. 
+This Github repo contains all my code implementing an ODE based dynamical system and using it as a recurrent neural network. This is done to study model-free optimization on a physically plausible NN structure. All the code is implemented using pytorch and numpy. I used ChatGPT to help format my markdown hence the cringe emojis ^^. The folders are split by Tasks, and then there is a Utils folder which has all the useful scripts I use. Here is a small overview of the most important files I use.
 
 
 
