@@ -1,6 +1,6 @@
 # ODE based Physical Neural Network (PNN) trained with model-free methods
 
-This Github repo contains all my code implementing an ODE based dynamical system and using it as a recurrent neural network. This is done to study model-free optimization on a physically plausible NN structure. All the code is implemented using pytorch and numpy. I used ChatGPT  to format my markdown (don't have time to learn it ). Here is a small overview of the most important files I use. 
+This Github repo contains all my code implementing an ODE based dynamical system and using it as a recurrent neural network. This is done to study model-free optimization on a physically plausible NN structure. All the code is implemented using pytorch and numpy. I used ChatGPT to help format my markdown hence the cringe emojis ^^. Here is a small overview of the most important files I use. 
 
 
 
@@ -28,7 +28,8 @@ This module defines several custom PyTorch models and training routines, includi
 $$
 \dot{\mathbf{h}}^{[l]}(t) = -\alpha \mathbf{h}^{[l]}(t) + \boldsymbol{\beta}^{[l]} \cdot \sin\left(W_{\text{rec}}^{[l]} \mathbf{h}^{[l]}(t) + \gamma W_{\text{in}}^{[l]} \mathbf{h}^{[l-1]}(t) + \mathbf{b}^{[l]}\right) + \mu \mathcal{N}(0, 1) , \text{for}~h>1
 $$
-This PNN simulates a network of of coupled nonlinear oscillator nodes with the input being $h^{[0]}$, like MNIST images. Layers use **sparse, spectrally normalized** weights via a custom `SparseLinear` module to promote stability, weights are also symmetric to implement bi-directional coupling common in physical systems. I was previously using a small feedback $\alpha = 0.9$ but then the network needed 300 steps to reach steady state, that is too long and makes the code run slow. Right now I use $\alpha = 3$. $W_{\text{rec}}$ is left untrained for memory independent tasks like MNIST or FashionMNIST. The implementation is in the forward method.
+
+This PNN simulates a network of of coupled nonlinear oscillator nodes with the input being $h^{[0]}$, like MNIST images. Layers use **sparse, spectrally normalized** weights via a custom `SparseLinear` module to promote stability, weights are also symmetric to implement bi-directional coupling common in physical systems. I was previously using a small feedback $\alpha = 0.9$ but then the network needed 300 steps to reach steady state, that is too long and makes the code run slow. Right now I use $\alpha = 3$. $W_{\text{rec}}$ is left untrained for memory independent tasks like MNIST or FashionMNIST. The implementation is in the forward method. Also no noise for now, life is already hard enough ...
 
 When using the network to perform memory-independent tasks we wait for it to reach steady state:
 
@@ -44,6 +45,9 @@ Here are some pictures of the activation states :
 
 This plot allows us to set the max number of steps for integration if needed.
 
+There is another class that I use for the population based Algorithms called "Oscillator_RNN_parallel" this used a fixed number of steps that we can set to 30 or 40 according to the above plot. This is because I parallelize the forward pass across the population (sequential for loop is too slow), this requires time steps to be fixed across different candidates in the population otherwise the tensor (pop_soze,_batch_size,time_steps) has slices of different size which doe snot work. Also the logic of stopping if we reach a trashold or the number of max step is reached does not work with the vmap pytorch function that handles parallelization. In short, we need a fixed for loop.
+
+
 #### 🧪 Other Models
 I used these mainly for debugging when I lost faith... Particularly the time independent models since they run much faster x30 since there is no time loop.
 - `RNN_network`: Vanilla RNN using PyTorch’s built-in `nn.RNN`.
@@ -54,10 +58,29 @@ I used these mainly for debugging when I lost faith... Particularly the time ind
 
 ### ⚙️ Training Utilities
 
-- `train_BP_torch`: Standard backpropagation training loop using `torch.optim`.
-- `train_online_pop_NN`: Evolutionary-style population-based optimization loop (PEPG, CMAES if you have the patience of a Shaolin monk, particle swarm if you are a clinically insane).
+- `train_BP_torch`: Standard backpropagation training loop using `torch.optim`.3
+- `train_online_pop_NN`: Evolutionary-style population-based optimization loop (PEPG, CMAES if you have the patience of a Shaolin monk, particle swarm if you are a clinically insane). This is my original loop with an explicit for loop which makes it very slow...
+- `train_online_pop_parallel`: Same as before but with the forward pass parallelized accross the population for speed. This lead to close to 40x improvement in speed for model size of $\sim$ 100k parameters.
 - `train_online_SPSA_NN`: Black-box training with Simultaneous Perturbation Stochastic Approximation (SPSA), optionally enhanced with Adam.
 
+---
+### How Forward Pass Is Parallelized Across the Population
+
+- **Stateless Model Invocation**  
+  We convert the trained `nn.Module` into a stateless function via `torch.func.functional_call`, so that all weights and buffers are passed in as data rather than stored internally.
+
+- **Batched State Dictionary**  
+  Instead of one set of parameters, we build a single `OrderedDict` where each key maps to a tensor of shape `(pop_size, *original_shape)`. This “batched state dict” holds all candidate weights in one place.
+
+- **Vectorized Call with `vmap`**  
+  We wrap the stateless model call in `torch.vmap`, telling PyTorch to map the function over the 0th dimension of our batched state dict—i.e., run all `pop_size` networks in parallel.
+
+- **Shape of Outputs**  
+  The result tensor has shape `(pop_size, batch_size, n_classes)`, giving you all networks’ predictions simultaneously for downstream loss or metric computation.  
+
+##### I have 2 notebooks to check this:
+- A simple one "PNN_parallelize_population_check_1" using an old deprecated vmap in pytorch but easier to understand since it uses only tensors no idctionaries
+- New updated compatible with latest pytorch versions very annoying because it uses this dictionary structure to pass parameters to pass to the vectorized PNN function.
 ---
 
 ## ⚙️ `optimization_algorithms.py` – Black-Box Optimizers
