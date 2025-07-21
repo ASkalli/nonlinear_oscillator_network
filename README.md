@@ -40,7 +40,9 @@ To check steady state I made a handy script called "Oscillator_RNN_ssdyna_check.
 Here are some pictures of the activation states : 
 
 
-![Steady state image](https://photos.app.goo.gl/ZVpcZ72p2drj66nz9)
+![Steady state image](Utils/output_time_check.png)
+
+This plot allows us to set the max number of steps for integration if needed.
 
 #### 🧪 Other Models
 I used these mainly for debugging when I lost faith... Particularly the time independent models since they run much faster x30 since there is no time loop.

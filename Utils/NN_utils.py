@@ -13,7 +13,9 @@ import time
 import matplotlib.pyplot as plt
 import pdb
 
-
+from torch.func import functional_call
+from torch import vmap
+from collections import OrderedDict
 
 class Base_Model(nn.Module):
     
@@ -137,8 +139,8 @@ def train_BP_torch(model, n_epochs, train_loader, test_loader, loss, optimizer):
             Y_pred = model.forward(images)
             loss_value = loss(Y_pred,labels)
             train_loss_value =loss_value.item()
-            if i%5==0:
-                train_loss.append(train_loss_value)
+
+            train_loss.append(train_loss_value)
             
             #backward pass
             optimizer.zero_grad()
@@ -146,7 +148,7 @@ def train_BP_torch(model, n_epochs, train_loader, test_loader, loss, optimizer):
             optimizer.step()
                 
             # evaluate after some epochs
-            if i == 0 or (i+1) % 50 == 0:
+            if i == 0 or (i+1) % 10 == 0:
                 test_loss_minibatches = []
                 model.eval()
                 correct = 0 
@@ -416,7 +418,6 @@ class Oscillator_RNN_dyn(Base_Model):
         self.N_out = params["N_out"]
         self.N_neurons = params["N_neurons"]
         self.N_layers = params["N_layers"]
-        self.T_SS = params["time_steady_state"]
         
         self.alpha = 3
         
@@ -830,3 +831,312 @@ class Tiny_convnet(Base_Model):
         x = x.view(x.size(0), -1)  # Flatten
         x = self.fc(x)
         return x
+    
+
+
+"""
+New functions and classes to paralellize accross the population:
+
+"""
+
+# same PNN network but with fixed number of integrations steps set to max_steps
+#this is needed to parallelize accross the population so all samples have 
+#the same number of timesteps ! 
+class Oscillator_RNN_parallel(Base_Model):
+    def __init__(self, params):
+        super(Oscillator_RNN_parallel, self).__init__()
+
+        self.N_in = params["N_in"]
+        self.N_out = params["N_out"]
+        self.N_neurons = params["N_neurons"]
+        self.N_layers = params["N_layers"]
+        
+        self.alpha = 3
+        
+        self.eps_int = 1e-2
+        self.dt = 0.1
+        self.max_steps = 200
+        self.k = 0
+        self.k_vec = []
+        
+        self.sparsity = 0.1
+        self.spectral_radius = 0.8
+        
+        self.activations = {}
+        self.save_activations = False
+        
+        self.W_input = nn.Linear(in_features=self.N_in, out_features = self.N_neurons)
+        
+        self.W_in = nn.ModuleList([
+            nn.Linear(self.N_neurons, self.N_neurons)
+            for _ in range(self.N_layers-1)
+        ])
+    
+        self.W_recurrent =  nn.ModuleList([
+            SparseLinear(self.N_neurons, self.N_neurons,sparsity=self.sparsity,bias=True,sym=True)
+            for _ in range(self.N_layers)
+        ])
+        
+        self.W_out = nn.Linear(in_features = self.N_neurons, out_features = self.N_out)
+        
+
+
+    def init_esn_weights(self, spectral_radius=0.8, sparsity=0.2, reservoir=True):
+        
+        self.sparsity = sparsity
+        self.spectral_radius = spectral_radius
+        
+        with torch.no_grad():
+            
+            W = (2 * torch.rand(self.N_neurons, self.N_in) - 1)/100
+
+            
+            self.W_input.weight.data.copy_(W)
+            
+            for layer in range(self.N_layers):
+                
+                W = (2 * torch.rand(self.N_neurons, self.N_neurons) - 1)
+                #W *= self.W_recurrent[layer].mask
+                eigvals = torch.linalg.eigvals(W).abs().max()
+                
+                if eigvals < 1e-6:
+                    eigvals = 1e-6
+                
+                W *= self.spectral_radius / eigvals
+                
+                self.W_in[layer-1].weight.copy_(W)
+                
+                
+                if reservoir:
+                    self.W_recurrent[layer].weight.requires_grad = False
+                    self.W_recurrent[layer].bias.requires_grad = False
+
+    
+    
+    def forward(self, X, eps_int=None, dt=None,save_activations = None):
+        if eps_int is None:
+            eps_int = self.eps_int
+        
+        if dt is None: 
+            dt = self.dt
+        if save_activations is None:
+            save_activations = self.save_activations
+        
+        if save_activations:
+            self.activations = {f"layer{l}": [] for l in range(self.N_layers)}
+    
+        batch_size = X.size(0)
+    
+        # Initialize hidden states: shape (N_layers, batch_size, N_neurons)
+        h = [torch.zeros(batch_size, self.N_neurons, device=X.device) for _ in range(self.N_layers)]
+        dh = [torch.zeros(batch_size, self.N_neurons, device=X.device) for _ in range(self.N_layers)]
+    
+        # Input projection
+        x_in = self.W_input(X.view(batch_size, -1))
+    
+    
+        
+        #self.k=0
+        for _ in range(self.max_steps):
+            #self.k+=1
+            # Layer 0 update
+            dh[0] = -self.alpha * h[0] + torch.sin(x_in + self.W_recurrent[0](h[0]))
+            h[0] = h[0] + dh[0] * dt
+            if save_activations:
+                self.activations["layer0"].append(h[0].detach().cpu().clone())
+    
+            # Updates for other layers
+            for l in range(1, self.N_layers):
+                dh[l] = -self.alpha * h[l] + torch.sin(
+                    self.W_in[l-1](h[l-1]) + self.W_recurrent[l](h[l])
+                )
+                h[l] = h[l] + dh[l] * dt
+                if save_activations:
+                    self.activations[f"layer{l}"].append(h[l].detach().cpu().clone())
+                
+        # Output projection from last layer
+        out = self.W_out(h[-1])
+        return out
+    
+
+def build_batched_params_dict_fast(coord, model, dtype=torch.float32, device=None):
+    """
+    Vectorized version: builds one batched state_dict (key→Tensor of shape [pop_size, …])
+    without Python loops over the population dimension.
+
+    Parameters:
+    - coord: np.ndarray, shape (pop_size, n_trainable_params)
+    - model: nn.Module (already moved to device & dtype)
+    - dtype: torch.dtype (default torch.float32)
+    - device: torch.device (e.g. 'cuda')
+
+    Returns:
+    - batched_state: OrderedDict[key → Tensor of shape (pop_size, *orig_shape)]
+    """
+    pop_size, n_train = coord.shape
+
+    # 1) Grab the reference state (params + buffers)
+    ref_state = model.state_dict()  # OrderedDict
+
+    # 2) Identify trainable parameter names & compute their flat offsets
+    named_params = dict(model.named_parameters())
+    trainable_keys = [k for k,p in named_params.items() if p.requires_grad]
+
+    # For each trainable key, record shape and size
+    shapes = [tuple(ref_state[k].shape) for k in trainable_keys]
+    sizes  = [int(np.prod(s)) for s in shapes]
+    cum    = np.cumsum([0] + sizes)  # offsets into flat vector
+
+    # 3) Sanity check
+    assert cum[-1] == n_train, f"coord has {n_train} but need {cum[-1]}"
+
+    # 4) Build the new batched state_dict
+    batched = OrderedDict()
+
+    # (a) First fill in trainable params by slicing coord in one go
+    for idx, key in enumerate(trainable_keys):
+        start, end = cum[idx], cum[idx+1]
+        # slice out (pop_size, size)
+        slice_np = coord[:, start:end]  # numpy
+        # convert & reshape in one shot: (pop_size, *orig_shape)
+        batched[key] = (
+            torch
+            .from_numpy(slice_np.astype(np.float32))
+            .to(device)
+            .view(pop_size, *shapes[idx])
+        )
+
+    # (b) Then fill in frozen params & buffers by expanding the single tensor
+    for key, tensor in ref_state.items():
+        if key in trainable_keys:
+            continue
+        # ensure it’s on correct device & dtype
+        t = tensor.to(device=device, dtype=dtype)
+        # expand to (pop_size, *orig_shape)
+        batched[key] = t.unsqueeze(0).expand(pop_size, *t.shape)
+
+    return batched
+
+
+def population_cross_entropy_loss(population_output, labels):
+    """
+    Compute average cross-entropy loss per population member.
+
+    Parameters:
+    - population_output: Tensor of shape (pop_size, batch_size, n_classes)
+    - labels: Tensor of shape (batch_size,) with target class indices
+
+    Returns:
+    - population_losses: Tensor of shape (pop_size,) with mean loss per individual
+    """
+
+    pop_size, batch_size, n_classes = population_output.shape
+
+    # Repeat labels across population
+    labels_expanded = labels.unsqueeze(0).expand(pop_size, -1)  # (pop_size, batch_size)
+
+    # Flatten both for loss computation
+    outputs_flat = population_output.reshape(-1, n_classes)     # (pop_size * batch_size, n_classes)
+    labels_flat = labels_expanded.reshape(-1)                   # (pop_size * batch_size,)
+
+    # Compute per-sample loss without reduction
+    losses_flat = F.cross_entropy(outputs_flat, labels_flat, reduction='none')  # (pop_size * batch_size,)
+
+    # Reshape back to (pop_size, batch_size)
+    losses = losses_flat.view(pop_size, batch_size)
+
+    # Mean loss per individual
+    population_losses = losses.mean(dim=1)  # (pop_size,)
+
+    return population_losses
+
+def train_online_pop_parallel(model, n_epochs, train_loader, test_loader, loss, optimizer):
+    "function to train a model using the population based training algorithm,  returns the accuracy and best reward lists"
+    
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    model.to(device)
+
+    print(f"Using {device} device")
+    print(model)
+    
+    
+    # Vectorized model across the population
+    batched_forward = vmap(
+        lambda state, x: functional_call(model, state, (x,)),
+        in_dims=(0, None),
+    )
+
+
+    #array to store the accuracy of the model
+    test_acc = []
+    train_loss = []
+    test_loss = []
+    
+    #dict to return
+    data_dict = {}
+
+
+    start_time = time.time()
+    for epoch in range(n_epochs):
+        model.eval()
+        for i, (features,labels) in enumerate(train_loader):
+            
+            if device == 'cuda':
+                features = features.to(device)
+                labels = labels.to(device)
+            
+            coordinates = optimizer.ask() #optimizer gives us coordinates
+
+            #build a list of batched coordinates for parallel processing:
+            batched_params = build_batched_params_dict_fast(coordinates, model, dtype=torch.float32, device=device) 
+            with torch.no_grad():
+                #parallel forward pass:
+                Y_pred = batched_forward(batched_params,features)
+
+            rewards_list = population_cross_entropy_loss(Y_pred, labels).detach().cpu().numpy()
+ 
+            
+            rewards = np.array(rewards_list)[:,np.newaxis]
+            optimizer.tell(rewards)
+            best_params = coordinates[np.argmin(rewards),:]
+            train_loss.append(np.min(rewards))
+            
+            #test periodically, when testing we only test on the best candidate in the 
+            #population, no need to parallelize, we use the regular custom forward pass params
+            
+            if i == 0 or (i+1) % 10 == 0:
+                test_loss_minibatches = []
+                model.eval()
+                correct = 0
+                total = 0
+                with torch.no_grad():
+                    for features, labels in test_loader:
+                        features = features.to(device)
+                        labels = labels.to(device)
+                        Y_pred = model.forward_pass_params(best_params,features)
+                        loss_value = loss(Y_pred,labels)
+                        _, predicted = torch.max(Y_pred.data, 1)
+                        total += labels.size(0)
+                        correct += (predicted == labels).sum().item()
+                        test_loss_minibatches.append(loss(Y_pred,labels).item())
+                        
+                    accuracy = ( 100*correct/total)
+                    test_acc.append(accuracy)
+                    test_loss.append(np.mean(test_loss_minibatches))
+                    print(f'Epoch [{epoch+1}/{n_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss_value.item()}, Test Accuracy: {accuracy}%')
+     
+    end_time = time.time()
+    train_time = end_time - start_time
+    print(f'Total time: {(end_time - start_time)/3600}h')
+    
+    data_dict = {
+        'train_loss' : train_loss,
+        'test_loss':test_loss ,
+        'test_acc' : test_acc ,
+        'time' : train_time,
+        'n_params': model.count_parameters()
+        
+        }
+    
+    
+    return data_dict
