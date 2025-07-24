@@ -112,8 +112,8 @@ def train_BP_torch(model, n_epochs, train_loader, test_loader, loss, optimizer):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model.to(device)
 
-    print(f"Using {device} device")
-    print(model)
+    print(f"Using {device} device",flush=True)
+    print(model,flush=True)
 
     #array to store the accuracy of the model
     
@@ -169,12 +169,12 @@ def train_BP_torch(model, n_epochs, train_loader, test_loader, loss, optimizer):
                     test_loss.append(np.mean(test_loss_minibatches))
                     
                 
-                print(f'Epoch [{epoch+1}/{n_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss_value.item()}, Test Accuracy: {accuracy}%')
+                print(f'Epoch [{epoch+1}/{n_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss_value.item()}, Test Accuracy: {accuracy}%',flush=True)
 
 
     end_time = time.time()
     train_time = end_time - start_time
-    print(f'Total time: {(end_time - start_time)/3600}h')
+    print(f'Total time: {(end_time - start_time)/3600}h',flush=True)
     
     data_dict = {
         'train_loss' : train_loss,
@@ -577,8 +577,8 @@ def train_online_pop_NN(model, n_epochs, train_loader, test_loader, loss, optimi
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model.to(device)
 
-    print(f"Using {device} device")
-    print(model)
+    print(f"Using {device} device",flush=True)
+    print(model,flush=True)
     
     best_reward = []
     #array to store the accuracy of the model
@@ -634,11 +634,11 @@ def train_online_pop_NN(model, n_epochs, train_loader, test_loader, loss, optimi
                     accuracy = ( 100*correct/total)
                     test_acc.append(accuracy)
                     test_loss.append(np.mean(test_loss_minibatches))
-                    print(f'Epoch [{epoch+1}/{n_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss_value.item()}, Test Accuracy: {accuracy}%')
+                    print(f'Epoch [{epoch+1}/{n_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss_value.item()}, Test Accuracy: {accuracy}%',flush=True)
      
     end_time = time.time()
     train_time = end_time - start_time
-    print(f'Total time: {(end_time - start_time)/3600}h')
+    print(f'Total time: {(end_time - start_time)/3600}h',flush=True)
     
     data_dict = {
         'train_loss' : train_loss,
@@ -659,8 +659,8 @@ def train_online_SPSA_NN(model, n_epochs, train_loader, test_loader, loss, spsa_
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model.to(device)
 
-    print(f"Using {device} device")
-    print(model)
+    print(f"Using {device} device",flush=True)
+    print(model,flush=True)
     
     best_reward = []
     #array to store the accuracy of the model
@@ -733,10 +733,10 @@ def train_online_SPSA_NN(model, n_epochs, train_loader, test_loader, loss, spsa_
                     accuracy = ( 100*correct/total)
                     test_acc.append(accuracy)
                     test_loss.append(np.mean(test_loss_minibatches))
-                    print(f'Epoch [{epoch+1}/{n_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss_value.item()}, Test Accuracy: {accuracy}%')
+                    print(f'Epoch [{epoch+1}/{n_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss_value.item()}, Test Accuracy: {accuracy}%',flush=True)
     end_time = time.time()
     train_time = end_time - start_time
-    print(f'Total time: {(end_time - start_time)/3600}h')
+    print(f'Total time: {(end_time - start_time)/3600}h',flush=True)
     
     data_dict = {
         'train_loss' : train_loss,
@@ -853,11 +853,9 @@ class Oscillator_RNN_parallel(Base_Model):
         
         self.alpha = 3
         
-        self.eps_int = 1e-2
+        self.eps_int = 1e-4
         self.dt = 0.1
-        self.max_steps = 200
-        self.k = 0
-        self.k_vec = []
+        self.max_steps = 40
         
         self.sparsity = 0.1
         self.spectral_radius = 0.8
@@ -936,9 +934,9 @@ class Oscillator_RNN_parallel(Base_Model):
     
     
         
-        #self.k=0
+        
         for _ in range(self.max_steps):
-            #self.k+=1
+            
             # Layer 0 update
             dh[0] = -self.alpha * h[0] + torch.sin(x_in + self.W_recurrent[0](h[0]))
             h[0] = h[0] + dh[0] * dt
@@ -1056,8 +1054,8 @@ def train_online_pop_parallel(model, n_epochs, train_loader, test_loader, loss, 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model.to(device)
 
-    print(f"Using {device} device")
-    print(model)
+    print(f"Using {device} device",flush=True)
+    print(model,flush=True)
     
     
     # Vectorized model across the population
@@ -1123,11 +1121,11 @@ def train_online_pop_parallel(model, n_epochs, train_loader, test_loader, loss, 
                     accuracy = ( 100*correct/total)
                     test_acc.append(accuracy)
                     test_loss.append(np.mean(test_loss_minibatches))
-                    print(f'Epoch [{epoch+1}/{n_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss_value.item()}, Test Accuracy: {accuracy}%')
+                    print(f'Epoch [{epoch+1}/{n_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss_value.item()}, Test Accuracy: {accuracy}%',flush=True)
      
     end_time = time.time()
     train_time = end_time - start_time
-    print(f'Total time: {(end_time - start_time)/3600}h')
+    print(f'Total time: {(end_time - start_time)/3600}h',flush=True)
     
     data_dict = {
         'train_loss' : train_loss,
@@ -1139,4 +1137,103 @@ def train_online_pop_parallel(model, n_epochs, train_loader, test_loader, loss, 
         }
     
     
+    return data_dict
+
+
+
+
+
+
+def analyze_and_plot(stats, N_neurons_vec, results, top_k=10):
+    """
+    Compute mean & std of best-of-top_k metrics across runs,
+    then plot Test Accuracy and Train/Test Loss vs. number of parameters.
+
+    Args:
+        stats (int): Number of independent runs per configuration.
+        N_neurons_vec (list or array): Different network-size settings.
+        results (array-like): Flat list/array of length stats * len(N_neurons_vec)
+                              where each entry is a dict with keys 'train_loss',
+                              'test_loss', 'test_acc', 'n_params'.
+        top_k (int, optional): How many best (or top) points to average. Default 10.
+    """
+    # reshape and placeholders
+    dummy = np.reshape(results, [stats, len(N_neurons_vec)])
+    train_loss_vec, train_loss_std = [], []
+    test_loss_vec,  test_loss_std  = [], []
+    test_acc_vec,   test_acc_std   = [], []
+    n_params = []
+
+    # compute metrics
+    for i in range(len(N_neurons_vec)):
+        tr_runs, te_loss_runs, te_acc_runs = [], [], []
+
+        for j in range(stats):
+            tr = np.array(dummy[j, i]['train_loss'])
+            tl = np.array(dummy[j, i]['test_loss'])
+            ta = np.array(dummy[j, i]['test_acc'])
+
+            # best-of-top_k
+            best_tr = np.mean(np.sort(tr)[:top_k])
+            best_tl = np.mean(np.sort(tl)[:top_k])
+            best_ta = np.mean(np.sort(ta)[-top_k:])
+
+            tr_runs.append(best_tr)
+            te_loss_runs.append(best_tl)
+            te_acc_runs.append(best_ta)
+
+        # aggregate over runs
+        train_loss_vec.append(np.mean(tr_runs))
+        train_loss_std.append(np.std(tr_runs))
+        test_loss_vec.append(np.mean(te_loss_runs))
+        test_loss_std.append(np.std(te_loss_runs))
+        test_acc_vec.append(np.mean(te_acc_runs))
+        test_acc_std.append(np.std(te_acc_runs))
+
+        # n_params is same across runs for given i
+        n_params.append(dummy[0, i]['n_params'])
+
+    n_params = np.array(n_params)
+
+    # --- Plot Test Accuracy ---
+    plt.figure()
+    plt.loglog(n_params, test_acc_vec, '-o', label='Test Accuracy')
+    plt.fill_between(n_params,
+                     np.array(test_acc_vec) - np.array(test_acc_std),
+                     np.array(test_acc_vec) + np.array(test_acc_std),
+                     alpha=0.3)
+    plt.xlabel('Number of parameters')
+    plt.ylabel('Test Accuracy')
+    plt.grid(True)
+    plt.legend()
+    plt.show()
+
+    # --- Plot CCE Loss ---
+    plt.figure()
+    plt.loglog(n_params, test_loss_vec, '-o', label='Test Loss')
+    plt.fill_between(n_params,
+                     np.array(test_loss_vec) - np.array(test_loss_std),
+                     np.array(test_loss_vec) + np.array(test_loss_std),
+                     alpha=0.3)
+    plt.loglog(n_params, train_loss_vec, '-o', label='Train Loss')
+    plt.fill_between(n_params,
+                     np.array(train_loss_vec) - np.array(train_loss_std),
+                     np.array(train_loss_vec) + np.array(train_loss_std),
+                     alpha=0.3)
+    plt.xlabel('Number of parameters')
+    plt.ylabel('CCE Loss')
+    plt.grid(True)
+    plt.legend()
+    plt.show()
+
+    # return computed vectors in case further processing is needed
+    data_dict = {
+        'n_params': n_params,
+        'train_loss_mean': np.array(train_loss_vec),
+        'train_loss_std':  np.array(train_loss_std),
+        'test_loss_mean':  np.array(test_loss_vec),
+        'test_loss_std':   np.array(test_loss_std),
+        'test_acc_mean':   np.array(test_acc_vec),
+        'test_acc_std':    np.array(test_acc_std),
+    }
     return data_dict
