@@ -8,7 +8,6 @@ import time
 import sys
 import pickle
 import gc
-import matplotlib.pyplot as plt
 
 # Add module path
 sys.path.append('G:/Utilisateurs/anas.skalli/Desktop/ONN_experiments/Simulation/Nonlinear_oscillator_net/nonlinear_oscillator_network/Utils')
@@ -23,11 +22,11 @@ def run_single_experiment(n_neurons, s, n_epochs, return_dict):
 
     # Reinitialize DataLoader inside the process
     transform_data = transforms.ToTensor()
-    train_dataset = datasets.MNIST(root='./data', train=True, transform=transform_data, download=True)
-    test_dataset = datasets.MNIST(root='./data', train=False, transform=transform_data, download=True)
+    train_dataset = datasets.FashionMNIST(root='./data', train=True, transform=transform_data, download=True)
+    test_dataset = datasets.FashionMNIST(root='./data', train=False, transform=transform_data, download=True)
     
-    train_loader_MNIST = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=1000, shuffle=True)
-    test_loader_MNIST = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=10000, shuffle=False)
+    train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=1000, shuffle=True)
+    test_loader = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=10000, shuffle=False)
 
     # Initialize model
     RNN_params = {
@@ -53,7 +52,7 @@ def run_single_experiment(n_neurons, s, n_epochs, return_dict):
 
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Neurons: {n_neurons}, Run: {s+1}, Params: {model.count_parameters()}", flush=True)
 
-    result = train_online_SPSA_NN(model, n_epochs, train_loader_MNIST, test_loader_MNIST, loss, SPSA_optimizer, adam_optimizer=Adam)
+    result = train_online_SPSA_NN(model, n_epochs, train_loader, test_loader, loss, SPSA_optimizer, adam_optimizer=Adam)
 
     return_dict[(n_neurons, s)] = result
     
@@ -92,14 +91,7 @@ if __name__ == '__main__':
     print("All results collected successfully.")
     print(f"Total time = {time.time() - start_time:.2f} s")
     
-    with open('results/paramscan_PNN_SPSA_MNIST_2.pkl', 'wb') as f:
+    with open('results/paramscan_PNN_SPSA_MNIST.pkl', 'wb') as f:
         pickle.dump(results, f)  
 
     analyze_and_plot(stats, N_neurons_vec, results, top_k=10)
-    
-    plt.figure()
-    for k,n_neurons in enumerate(N_neurons_vec):
-        plt.loglog(results[k]['test_acc'])
-        plt.legend(N_neurons_vec)
-            
-    
