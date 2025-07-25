@@ -68,7 +68,7 @@ if __name__ == '__main__':
 
     N_neurons_vec = [5, 10, 20, 30, 50, 75, 100]
     n_epochs = 2000
-    stats = 3
+    stats = 1
 
     print("Script started at:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
