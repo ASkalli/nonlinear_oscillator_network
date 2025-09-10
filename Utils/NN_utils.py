@@ -1102,7 +1102,7 @@ def train_online_pop_parallel(model, n_epochs, train_loader, test_loader, loss, 
             #test periodically, when testing we only test on the best candidate in the 
             #population, no need to parallelize, we use the regular custom forward pass params
             
-            if i == 0 or (i+1) % 10 == 0:
+            if i == 0 or (i+1) % 50 == 0:
                 test_loss_minibatches = []
                 model.eval()
                 correct = 0
