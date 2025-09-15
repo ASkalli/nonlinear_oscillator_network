@@ -26,18 +26,38 @@ def run_single_experiment(n_neurons, s, n_epochs, return_dict):
     import torch
     import torch.nn as nn
     from torchvision import datasets, transforms
-
-    # Reinitialize DataLoader inside the process
+    
+    apply_PCA = False
+    number_PCs = 81
+    
     transform_data = transforms.ToTensor()
     train_dataset = datasets.MNIST(root='./data', train=True, transform=transform_data, download=True)
-    test_dataset = datasets.MNIST(root='./data', train=False, transform=transform_data, download=True)
+    test_dataset  = datasets.MNIST(root='./data', train=False, transform=transform_data, download=True)
     
-    train_loader_MNIST = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=128, shuffle=True)
-    test_loader_MNIST = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=10000, shuffle=False)
+    if apply_PCA:
+        # Avoid giant DataLoader just to get arrays: use the raw tensors on the datasets
+        X_train = (train_dataset.data.view(-1, 28*28).float() / 255.0).numpy()
+        Y_train = train_dataset.targets.numpy()
+        X_test  = (test_dataset.data.view(-1, 28*28).float() / 255.0).numpy()
+        Y_test  = test_dataset.targets.numpy()
+    
+        # Fit PCA on train, transform train & test
+        pca = PCA_analysis(X_train)
+        X_train_pca = pca.transform(X_train, number_PCs)
+        X_test_pca  = pca.transform(X_test,  number_PCs)
+    
+        # Wrap back into your Custom_dataset (expects numpy arrays)
+        train_dataset = Custom_dataset(X_train_pca, Y_train)
+        test_dataset  = Custom_dataset(X_test_pca,  Y_test)
+    
+    # Now make normal loaders for training/eval (avoid workers inside Windows subprocess unless needed)
+    train_loader_MNIST = torch.utils.data.DataLoader(train_dataset, batch_size=1000, shuffle=True,  pin_memory=True, num_workers=0)
+    test_loader_MNIST  = torch.utils.data.DataLoader(test_dataset,  batch_size=10000, shuffle=False, pin_memory=True, num_workers=0)
 
     # Initialize model
+    input_dim = number_PCs if apply_PCA else 784
     RNN_params = {
-        "N_in": 784,
+        "N_in": input_dim,
         "N_out": 10,
         "N_neurons": n_neurons,
         "N_layers": 3
@@ -57,11 +77,11 @@ def run_single_experiment(n_neurons, s, n_epochs, return_dict):
     
     pop_size = int(0.01*N_dim)
     #pop_size = 100
-    PEPG_optimizer = PEPG_opt(N_dim, pop_size = pop_size, learning_rate=0.01, starting_mu=init_pos ,starting_sigma=1e-1)
+    PEPG_optimizer = PEPG_opt(N_dim, pop_size = pop_size, learning_rate=0.005, starting_mu=init_pos ,starting_sigma=1e-1)
     
     PEPG_optimizer.sigma_decay = 0.9999
     PEPG_optimizer.sigma_alpha=0.2
-    PEPG_optimizer.sigma_limit=0.01
+    PEPG_optimizer.sigma_limit=1e-3
     PEPG_optimizer.elite_ratio=0.1
     PEPG_optimizer.weight_decay=0.005
 
@@ -72,18 +92,18 @@ def run_single_experiment(n_neurons, s, n_epochs, return_dict):
     return_dict[(n_neurons, s)] = result
     
     # Clean up
-    del model
-    del PEPG_optimizer
-    torch.cuda.empty_cache()
-    gc.collect()
+    #del model
+    #del PEPG_optimizer
+    #torch.cuda.empty_cache()
+    #gc.collect()
 
 # ---- Main script ---- #
 if __name__ == '__main__':
     mp.set_start_method('spawn', force=True)
 
-    N_neurons_vec = [100]
+    N_neurons_vec =  [5, 10, 20 ,30, 50, 75, 100]
     #N_neurons_vec = [100]
-    n_epochs = 150
+    n_epochs = 1000
     stats = 1
 
     print("Script started at:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
@@ -101,12 +121,23 @@ if __name__ == '__main__':
 
     for p in processes:
         p.join()
-
+    
+    # ### stuff for debugging without the multiprocess parallelization
+    # n_neurons = N_neurons_vec[0]
+    # s = 0
+    # n_epochs = 3  # shorter while debugging
+    
+    # return_dict = {}  # plain dict
+    # run_single_experiment(n_neurons, s, n_epochs, return_dict)
+    
+    # results = [ return_dict[(n_neurons, s)] ]
+    # ###
+    
     results = [return_dict[key] for key in sorted(return_dict.keys())]
     print("All results collected successfully.")
     print(f"Total time = {time.time() - start_time:.2f} s")
     
-    with open('results/1000_overfit_batch128_popsize1percent_PNN_PEPG_MNIST.pkl', 'wb') as f:
+    with open('results/paramscan_l2regularization_PNN_PEPG_MNIST.pkl', 'wb') as f:
         pickle.dump(results, f)  
 
     analyze_and_plot(stats, N_neurons_vec, results, top_k=10)

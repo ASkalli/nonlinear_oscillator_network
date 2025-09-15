@@ -239,7 +239,7 @@ class PEPG_opt:
         self.sigma_max_change = 0.2
         self.learning_rate = learning_rate
         self.learning_rate_decay = 0.99
-        self.learning_rate_limit = 0.01
+        self.learning_rate_limit = 0.001
         self.elite_ratio = 0
         self.weight_decay = 0.01
         self.forget_best = True

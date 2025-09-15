@@ -43,6 +43,29 @@ class Base_Model(nn.Module):
         with torch.no_grad():
             self.set_params(params_to_send)
             return self.forward(X)
+        # ---------- regularization helpers ----------
+    def _parameters_for_regularization(self):
+        """Yield only weights to regularize (skip biases & norm scales)."""
+        for name, p in self.named_parameters():
+            if not p.requires_grad:
+                continue
+            if p.ndim == 1 or name.endswith(".bias") or "norm" in name.lower():
+                continue
+            yield p
+    
+    def l2_penalty(self):
+        """Sum of squared weights over selected parameters."""
+        reg = torch.zeros((), device=next(self.parameters()).device)
+        for p in self._parameters_for_regularization():
+            reg = reg + p.pow(2).sum()
+        return reg
+    
+    def l1_penalty(self):
+        """(Optional) L1 penalty for convenience."""
+        reg = torch.zeros((), device=next(self.parameters()).device)
+        for p in self._parameters_for_regularization():
+            reg = reg + p.abs().sum()
+        return reg
 
 
 class RNN_network(Base_Model):
@@ -456,10 +479,7 @@ class Oscillator_RNN_dyn(Base_Model):
         
         with torch.no_grad():
             
-            W = (2 * torch.rand(self.N_neurons, self.N_in) - 1)/100
-
-            
-            self.W_input.weight.data.copy_(W)
+            nn.init.xavier_uniform_(self.W_input.weight)
             
             for layer in range(self.N_layers):
                 
@@ -886,10 +906,7 @@ class Oscillator_RNN_parallel(Base_Model):
         
         with torch.no_grad():
             
-            W = (2 * torch.rand(self.N_neurons, self.N_in) - 1)/100
-
-            
-            self.W_input.weight.data.copy_(W)
+            nn.init.xavier_uniform_(self.W_input.weight)
             
             for layer in range(self.N_layers):
                 
@@ -1051,13 +1068,18 @@ def population_cross_entropy_loss(population_output, labels):
 def train_online_pop_parallel(model, n_epochs, train_loader, test_loader, loss, optimizer):
     "function to train a model using the population based training algorithm,  returns the accuracy and best reward lists"
     
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
-
-    print(f"Using {device} device",flush=True)
-    print(model,flush=True)
     
+    print(f"Using {device} device", flush=True)
+    print(model, flush=True)
     
+    if device.type == "cuda":
+        idx = device.index if device.index is not None else torch.cuda.current_device()
+        print(torch.cuda.get_device_name(idx), flush=True)
+    else:
+        print(device, flush=True)
+        
     # Vectorized model across the population
     batched_forward = vmap(
         lambda state, x: functional_call(model, state, (x,)),
@@ -1072,14 +1094,16 @@ def train_online_pop_parallel(model, n_epochs, train_loader, test_loader, loss, 
     
     #dict to return
     data_dict = {}
-
+    #regularization params
+    l_2_lambda = 1e-4
+    reg_mask = build_flat_reg_mask(model)
 
     start_time = time.time()
     for epoch in range(n_epochs):
         model.eval()
         for i, (features,labels) in enumerate(train_loader):
             
-            if device == 'cuda':
+            if device.type == 'cuda':
                 features = features.to(device)
                 labels = labels.to(device)
             
@@ -1093,8 +1117,8 @@ def train_online_pop_parallel(model, n_epochs, train_loader, test_loader, loss, 
 
             rewards_list = population_cross_entropy_loss(Y_pred, labels).detach().cpu().numpy()
  
+            rewards = np.array(rewards_list)[:,np.newaxis] + l_2_lambda*np.sum((coordinates*reg_mask)**2,axis=1)[:,np.newaxis]
             
-            rewards = np.array(rewards_list)[:,np.newaxis]
             optimizer.tell(rewards)
             best_params = coordinates[np.argmin(rewards),:]
             train_loss.append(np.min(rewards))
@@ -1102,7 +1126,7 @@ def train_online_pop_parallel(model, n_epochs, train_loader, test_loader, loss, 
             #test periodically, when testing we only test on the best candidate in the 
             #population, no need to parallelize, we use the regular custom forward pass params
             
-            if i == 0 or (i+1) % 50 == 0:
+            if i == 0 or (i+1) % 10 == 0:
                 test_loss_minibatches = []
                 model.eval()
                 correct = 0
@@ -1111,12 +1135,14 @@ def train_online_pop_parallel(model, n_epochs, train_loader, test_loader, loss, 
                     for features, labels in test_loader:
                         features = features.to(device)
                         labels = labels.to(device)
+                        
                         Y_pred = model.forward_pass_params(best_params,features)
-                        loss_value = loss(Y_pred,labels)
+                        loss_value = loss(Y_pred,labels).detach().cpu().numpy() + l_2_lambda*np.sum((best_params*reg_mask)**2,axis=1)[:,np.newaxis]
+                        
                         _, predicted = torch.max(Y_pred.data, 1)
                         total += labels.size(0)
                         correct += (predicted == labels).sum().item()
-                        test_loss_minibatches.append(loss(Y_pred,labels).item())
+                        test_loss_minibatches.append(loss_value)
                         
                     accuracy = ( 100*correct/total)
                     test_acc.append(accuracy)
@@ -1139,6 +1165,69 @@ def train_online_pop_parallel(model, n_epochs, train_loader, test_loader, loss, 
     
     return data_dict
 
+
+#DATA PREPROCESSING  
+
+class PCA_analysis:
+    def __init__(self, data_mat):
+        X = data_mat.astype(np.float32, copy=False)
+        self.mean_ = X.mean(axis=0, keepdims=True)
+        self.std_  = X.std(axis=0, ddof=0, keepdims=True)
+        X0 = (X - self.mean_) / np.where(self.std_ == 0, 1, self.std_)
+        n = X0.shape[0]
+        C = (X0.T @ X0) / (n - 1)
+        U, S, Vh = np.linalg.svd(C, full_matrices=False)
+        self.V = U
+        self.S = S
+        self.var_ratio_ = S / S.sum()
+        self.cum_var_pct_ = np.cumsum(self.var_ratio_) * 100.0
+
+    def compress_data(self, data_mat, k):
+        """Reconstruct data using exactly k principal components."""
+        X = data_mat.astype(np.float32, copy=False)
+        X0 = (X - self.mean_) / np.where(self.std_ == 0, 1, self.std_)
+        Vk = self.V[:, :k]
+        Z = X0 @ Vk
+        X0_hat = Z @ Vk.T
+        return X0_hat * np.where(self.std_ == 0, 1, self.std_) + self.mean_
+    
+    
+    def transform(self, data_mat, k):
+        X = data_mat.astype(np.float32, copy=False)
+        X0 = (X - self.mean_) / np.where(self.std_ == 0, 1, self.std_)
+        Vk = self.V[:, :k]              # (784, k)
+        Z = X0 @ Vk                     # (n_samples, k)
+        return Z
+
+#TO LOAD CUSTOM DATASETS FROM NUMPY
+
+class Custom_dataset(torch.utils.data.Dataset):
+    def __init__(self, features, labels):
+        self.features = features
+        self.labels = labels
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, idx):
+        return self.features[idx], self.labels[idx]
+
+
+
+def build_flat_reg_mask(model: torch.nn.Module) -> torch.Tensor:
+    """
+    Returns a 1D bool tensor of length n_params indicating which flat indices
+    should be L2-regularized (True = include). Excludes biases, 1D tensors,
+    and anything with 'norm' in the name.
+    """
+    parts = []
+    for name, p in model.named_parameters():
+        if not p.requires_grad:
+            continue
+        n = p.numel()
+        include = not (p.ndim == 1 or name.endswith(".bias") or "norm" in name.lower())
+        parts.append(torch.full((n,), include, dtype=torch.bool))
+    return torch.cat(parts).detach().cpu().numpy()[np.newaxis,:]
 
 
 
