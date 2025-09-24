@@ -692,6 +692,10 @@ def train_online_SPSA_NN(model, n_epochs, train_loader, test_loader, loss, spsa_
     #dict to return
     
     data_dict = {}
+    #regularization params
+    l_2_lambda = 1e-4
+    reg_mask = build_flat_reg_mask(model)
+    
     start_time = time.time()
     for epoch in range(n_epochs):
         model.eval()
@@ -710,10 +714,10 @@ def train_online_SPSA_NN(model, n_epochs, train_loader, test_loader, loss, spsa_
                 Y_pred_minus = model.forward_pass_params(params_minus,features)
                 
             loss_value_plus = loss(Y_pred_plus,labels)
-            loss_value_minus = loss(Y_pred_minus,labels)
+            loss_value_minus = loss(Y_pred_minus,labels) 
             
-            reward_plus = loss_value_plus.detach().cpu().item()
-            reward_minus = loss_value_minus.detach().cpu().item()
+            reward_plus = loss_value_plus.detach().cpu().item()  + l_2_lambda*np.sum((params_plus*reg_mask)**2)[:,np.newaxis]
+            reward_minus = loss_value_minus.detach().cpu().item()  + l_2_lambda*np.sum((params_minus*reg_mask)**2)[:,np.newaxis]
             
             grad_spsa = spsa_optimizer.approximate_gradient(reward_plus ,reward_minus)
             
@@ -745,15 +749,16 @@ def train_online_SPSA_NN(model, n_epochs, train_loader, test_loader, loss, spsa_
                         features = features.to(device)
                         labels = labels.to(device)
                         Y_pred = model.forward_pass_params(current_params,features)
-                        loss_value = loss(Y_pred,labels)
+                        loss_value = loss(Y_pred,labels).detach().cpu().item()  + l_2_lambda*np.sum((current_params*reg_mask)**2)[:,np.newaxis]
                         _, predicted = torch.max(Y_pred.data, 1)
                         total += labels.size(0)
                         correct += (predicted == labels).sum().item()
-                        test_loss_minibatches.append(loss(Y_pred,labels).item())
+                        test_loss_minibatches.append(loss(Y_pred,labels))
                     accuracy = ( 100*correct/total)
                     test_acc.append(accuracy)
                     test_loss.append(np.mean(test_loss_minibatches))
-                    print(f'Epoch [{epoch+1}/{n_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss_value.item()}, Test Accuracy: {accuracy}%',flush=True)
+                    
+                    print(f'Epoch [{epoch+1}/{n_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss_value}, Test Accuracy: {accuracy}%',flush=True)
     end_time = time.time()
     train_time = end_time - start_time
     print(f'Total time: {(end_time - start_time)/3600}h',flush=True)

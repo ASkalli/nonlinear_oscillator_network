@@ -87,6 +87,17 @@ if __name__ == '__main__':
 
     for p in processes:
         p.join()
+        
+    # ### stuff for debugging without the multiprocess parallelization
+    # n_neurons = N_neurons_vec[0]
+    # s = 0
+    # n_epochs = 3  # shorter while debugging
+    
+    # return_dict = {}  # plain dict
+    # run_single_experiment(n_neurons, s, n_epochs, return_dict)
+    
+    # results = [ return_dict[(n_neurons, s)] ]
+    # ###
 
     results = [return_dict[key] for key in sorted(return_dict.keys())]
     print("All results collected successfully.")
