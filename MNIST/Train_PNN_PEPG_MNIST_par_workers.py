@@ -137,7 +137,7 @@ if __name__ == '__main__':
     print("All results collected successfully.")
     print(f"Total time = {time.time() - start_time:.2f} s")
     
-    with open('results/paramscan_l2regularization_PNN_PEPG_MNIST.pkl', 'wb') as f:
+    with open('results/paramscan_l2regularization_PNN_PEPG_MNIST_run3.pkl', 'wb') as f:
         pickle.dump(results, f)  
 
     analyze_and_plot(stats, N_neurons_vec, results, top_k=10)
