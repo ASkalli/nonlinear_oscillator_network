@@ -716,8 +716,8 @@ def train_online_SPSA_NN(model, n_epochs, train_loader, test_loader, loss, spsa_
             loss_value_plus = loss(Y_pred_plus,labels)
             loss_value_minus = loss(Y_pred_minus,labels) 
             
-            reward_plus = loss_value_plus.detach().cpu().item()  + l_2_lambda*np.sum((params_plus*reg_mask)**2)[:,np.newaxis]
-            reward_minus = loss_value_minus.detach().cpu().item()  + l_2_lambda*np.sum((params_minus*reg_mask)**2)[:,np.newaxis]
+            reward_plus = loss_value_plus.detach().cpu().item()  + l_2_lambda*np.sum((params_plus*reg_mask)**2)
+            reward_minus = loss_value_minus.detach().cpu().item()  + l_2_lambda*np.sum((params_minus*reg_mask)**2)
             
             grad_spsa = spsa_optimizer.approximate_gradient(reward_plus ,reward_minus)
             
@@ -744,16 +744,20 @@ def train_online_SPSA_NN(model, n_epochs, train_loader, test_loader, loss, spsa_
                 model.eval()
                 correct = 0 
                 total = 0
+                
                 with torch.no_grad():
+                    
                     for features, labels in test_loader:
+                        
                         features = features.to(device)
                         labels = labels.to(device)
                         Y_pred = model.forward_pass_params(current_params,features)
-                        loss_value = loss(Y_pred,labels).detach().cpu().item()  + l_2_lambda*np.sum((current_params*reg_mask)**2)[:,np.newaxis]
+                        loss_value = loss(Y_pred,labels).detach().cpu().item()  + l_2_lambda*np.sum((current_params*reg_mask)**2)
                         _, predicted = torch.max(Y_pred.data, 1)
                         total += labels.size(0)
                         correct += (predicted == labels).sum().item()
-                        test_loss_minibatches.append(loss(Y_pred,labels))
+                        test_loss_minibatches.append(loss_value)
+                        
                     accuracy = ( 100*correct/total)
                     test_acc.append(accuracy)
                     test_loss.append(np.mean(test_loss_minibatches))
