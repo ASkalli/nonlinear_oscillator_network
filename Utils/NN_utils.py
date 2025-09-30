@@ -147,7 +147,7 @@ def train_BP_torch(model, n_epochs, train_loader, test_loader, loss, optimizer):
     #dict to return
     
     data_dict = {}
-
+    l_2_lambda = 1e-4
     start_time = time.time()
     for epoch in range(n_epochs):
         
@@ -160,7 +160,7 @@ def train_BP_torch(model, n_epochs, train_loader, test_loader, loss, optimizer):
             
             #forward pass
             Y_pred = model.forward(images)
-            loss_value = loss(Y_pred,labels)
+            loss_value = loss(Y_pred,labels) + l_2_lambda*model.l2_penalty()
             train_loss_value =loss_value.item()
 
             train_loss.append(train_loss_value)
@@ -185,7 +185,7 @@ def train_BP_torch(model, n_epochs, train_loader, test_loader, loss, optimizer):
                         
                         total += labels.size(0)
                         correct += (predicted == labels).sum().item()
-                        test_loss_minibatches.append(loss(Y_pred,labels).item())
+                        test_loss_minibatches.append(loss(Y_pred,labels).item() + l_2_lambda*model.l2_penalty().item())
                     
                     accuracy = ( 100*correct/total)
                     test_acc.append(accuracy)
@@ -360,7 +360,7 @@ class Oscillator_RNN(Base_Model):
                 self.activations[f"layer{l}"].append(h[l].detach().cpu().clone())
         out = self.W_out(h[-1])
         return out
- 
+
     
 class SparseLinear(nn.Module):
     def __init__(self, in_features, out_features,spectral_radius = 0.8, sparsity=0.2, bias=True,sym = True):
@@ -655,7 +655,7 @@ def train_online_pop_NN(model, n_epochs, train_loader, test_loader, loss, optimi
                     test_acc.append(accuracy)
                     test_loss.append(np.mean(test_loss_minibatches))
                     print(f'Epoch [{epoch+1}/{n_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss_value.item()}, Test Accuracy: {accuracy}%',flush=True)
-     
+    
     end_time = time.time()
     train_time = end_time - start_time
     print(f'Total time: {(end_time - start_time)/3600}h',flush=True)
@@ -726,7 +726,7 @@ def train_online_SPSA_NN(model, n_epochs, train_loader, test_loader, loss, spsa_
                 current_params= spsa_optimizer.update_parameters(grad_spsa) #update params with SPSA
                 
             else:
-               
+            
                 step = adam_optimizer.step(grad_spsa)
                 current_params= spsa_optimizer.update_parameters_step(step) #update params with SPSA
                 
@@ -836,7 +836,7 @@ class simple_FFNN(Base_Model):
 
 #small convnet to save on parameters
 class Tiny_convnet(Base_Model):
-      
+    
     def __init__(self):
         super(Tiny_convnet, self).__init__()
             
@@ -1125,7 +1125,7 @@ def train_online_pop_parallel(model, n_epochs, train_loader, test_loader, loss, 
                 Y_pred = batched_forward(batched_params,features)
 
             rewards_list = population_cross_entropy_loss(Y_pred, labels).detach().cpu().numpy()
- 
+
             rewards = np.array(rewards_list)[:,np.newaxis] + l_2_lambda*np.sum((coordinates*reg_mask)**2,axis=1)[:,np.newaxis]
             
             optimizer.tell(rewards)
@@ -1157,7 +1157,7 @@ def train_online_pop_parallel(model, n_epochs, train_loader, test_loader, loss, 
                     test_acc.append(accuracy)
                     test_loss.append(np.mean(test_loss_minibatches))
                     print(f'Epoch [{epoch+1}/{n_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss_value.item()}, Test Accuracy: {accuracy}%',flush=True)
-     
+    
     end_time = time.time()
     train_time = end_time - start_time
     print(f'Total time: {(end_time - start_time)/3600}h',flush=True)

@@ -26,7 +26,7 @@ This module defines several custom PyTorch models and training routines, includi
 - Each layer’s hidden state evolves over time using a discretized differential equation:
 
 $$
-\dot{\mathbf{h}}^{[l]}(t) = -\alpha \mathbf{h}^{[l]}(t) + \boldsymbol{\beta}^{[l]} \cdot \sin\left(W_{\text{rec}}^{[l]} \mathbf{h}^{[l]}(t) + \gamma W_{\text{in}}^{[l]} \mathbf{h}^{[l-1]}(t) + \mathbf{b}^{[l]}\right) + \mu \mathcal{N}(0, 1) , \text{for}~h>1
+\dot{\mathbf{h}}^{[l]}(t) = -\alpha \mathbf{h}^{[l]}(t) + \boldsymbol{\beta}^{[l]} \cdot \sin\left(W_{\text{rec}}^{[l]} \mathbf{h}^{[l]}(t) + \gamma W_{\text{in}}^{[l]} \mathbf{h}^{[l-1]}(t) + \mathbf{b}^{[l]}\right) + \mu \mathcal{N}(0, 1) , \text{for}~l>1
 $$
 
 This PNN simulates a network of of coupled nonlinear oscillator nodes with the input being $h^{[0]}$, like MNIST images. Layers use **sparse, spectrally normalized** weights via a custom `SparseLinear` module to promote stability, weights are also symmetric to implement bi-directional coupling common in physical systems. I was previously using a small feedback $\alpha = 0.9$ but then the network needed 300 steps to reach steady state, that is too long and makes the code run slow. Right now I use $\alpha = 3$. $W_{\text{rec}}$ is left untrained for memory independent tasks like MNIST or FashionMNIST. The implementation is in the forward method. Also no noise for now, life is already hard enough ...
