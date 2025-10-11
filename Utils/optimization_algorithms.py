@@ -73,7 +73,7 @@ class SPSA_opt:
         if np.var(self.delta) == 0:
             gradient = (loss_plus - loss_minus) / (2 * self.epsilon + 1e-7) *self.delta
         else :
-            gradient = ((loss_plus - loss_minus) / (2 * self.epsilon  * np.var(self.delta +1e-7))) *self.delta
+            gradient = ((loss_plus - loss_minus) / (2 * self.epsilon  * np.var(self.delta) + 1e-7)) *self.delta
         return gradient
     
     def update_parameters(self, gradient):
