@@ -27,10 +27,10 @@ os.environ.setdefault("MKL_NUM_THREADS", "1")
 torch.set_num_threads(1)
 
 # ----------------------------------------------------------
-# Model setup (your class)
+# Model setup (our ODE RNN class)
 # ----------------------------------------------------------
 
-n_neurons = 5  # sweep this to study scaling
+n_neurons = 10  # sweep this to study scaling
 RNN_params = {
     "N_in": 784,
     "N_out": 10,

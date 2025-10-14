@@ -13,7 +13,7 @@ def rss_mb():
 # -------------------------------
 # Params
 # -------------------------------
-N_dim = 50             # adjust as needed
+N_dim = 11250             # adjust as needed
 dtype = np.float32         # switch to np.float64 to compare but doesn't work for now ... just divide by 2
 n_loops = 1                # number of ask/tell updates to run (and measure)
 
@@ -23,19 +23,13 @@ n_loops = 1                # number of ask/tell updates to run (and measure)
 init_pos = np.random.randn(N_dim, 1).astype(dtype, copy=False)
 
 # choose an even pop_size (PEPG typically uses mirrored sampling)
-pop_size = np.max(int(0.01 * N_dim),10)
+pop_size = np.max([int(0.01 * N_dim),10])
 pop_size = pop_size + 1 if (pop_size % 2) else pop_size
 
 # dummy rewards for the tell() step (shape must match your PEPG implementation)
 rewards = np.random.randn(pop_size, 1).astype(dtype, copy=False)
 
-PEPG_optimizer = PEPG_opt(
-    N_dim,
-    pop_size=pop_size,
-    learning_rate=0.01,
-    starting_mu=init_pos,
-    starting_sigma=1e-1
-)
+CMA_optimizer = CMA_opt(N_dim, pop_size, select_pop=int(pop_size/2), sigma_init=0.01, mean_init=init_pos)
 
 # -------------------------------
 # Measurement (ask -> tell)
@@ -44,9 +38,9 @@ tracemalloc.start()
 rss_before = rss_mb()
 
 for _ in range(n_loops):
-    coordinates = PEPG_optimizer.ask()     #  returns population samples (pop_size x N_dim)
+    coordinates = CMA_optimizer.ask()     #  returns population samples (pop_size x N_dim)
     #give dummy rewards
-    PEPG_optimizer.tell(rewards)
+    CMA_optimizer.tell(rewards)
 
     
     # del coordinates
@@ -77,7 +71,7 @@ report_array("rewards", rewards)
 
 # Try to report common internal state if exposed by your class (optional, safe checks)
 for attr in ["mu", "sigma", "population", "eps", "noise"]:
-    val = getattr(PEPG_optimizer, attr, None)
+    val = getattr(CMA_optimizer, attr, None)
     if isinstance(val, np.ndarray):
         report_array(attr, val)
 
