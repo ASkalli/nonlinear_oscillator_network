@@ -14,7 +14,7 @@ import numpy as np, sys, psutil, os, gc, tracemalloc, time
 def rss_mb():
     return psutil.Process(os.getpid()).memory_info().rss / 1e6
 
-N_dim = 11250
+N_dim = 324260
 dtype = np.float32  # switch to np.float64 to compare but doesn't work for now ... just divide by 2
 n_loops = 1
 
