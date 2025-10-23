@@ -327,7 +327,7 @@ class Oscillator_RNN(Base_Model):
                 
                 # self.W_input.bias.data.zero_()
                 # self.W_out.bias.data.zero_()
-               
+
                 # self.W_in[layer].bias.data.zero_()
                 # self.W_recurrent[layer].bias.data.zero_()
                 
@@ -801,7 +801,7 @@ class Linear_model(Base_Model):
 
 class simple_FFNN(Base_Model):
     #simple multilayer perceptron
-    def __init__(self, params):
+    def __init__(self, params,):
         super(simple_FFNN, self).__init__()
         
         self.N_in = params["N_in"]
@@ -1173,6 +1173,253 @@ def train_online_pop_parallel(model, n_epochs, train_loader, test_loader, loss, 
     
     
     return data_dict
+
+
+class LoRALinear(nn.Module):
+    def __init__(self, n_in, n_out, ratio=10, alpha=1.0):
+        super().__init__()
+        self.W_fixed = nn.Linear(n_in, n_out)
+        self.W_fixed.weight.requires_grad = False
+        self.W_fixed.bias.requires_grad = False
+
+        # LoRA matrices 
+        self.A = nn.Parameter(torch.randn(n_out, ratio) * 0.01)  # Shape: (n_out, r)
+        self.B = nn.Parameter(torch.zeros(ratio, n_in))          # Shape: (r, n_in)
+        self.scale = alpha / ratio
+
+    def forward(self, x):
+        base = self.W_fixed(x)
+        # LoRA adaptation: (A @ B) has shape (n_out, n_in), same as W_fixed.weight
+        lora = (x @ self.B.t()) @ self.A.t() * self.scale
+        return base + lora
+
+class Regional_had_weights(nn.Module):
+    # regional hadamard adaptation of the weights to reduce number of trainable parameters
+    def __init__(self, n_in, n_out, ratio=10):
+        super().__init__()
+        self.n_in = n_in
+        self.n_out = n_out
+        self.ratio = max(1, int(ratio))
+
+        self.W_fixed = nn.Linear(in_features = n_in, out_features= n_out, bias=True)
+        self.W_fixed.weight.requires_grad = False
+        if self.W_fixed.bias is not None:
+            self.W_fixed.bias.requires_grad = False
+
+        # regional matrix for hadamard modulation
+        h_small = max(1, n_out // self.ratio)
+        w_small = max(1, n_in  // self.ratio)
+        self.regional_weigths = nn.Parameter(  # keep original attribute name
+            torch.randn(1, 1, h_small, w_small) * 0.01
+        )
+
+    def forward(self, x):
+        
+        # Resize regional matrix to (n_out, n_in) with bilinear interpolation
+        resized = F.interpolate(
+            self.regional_weigths, 
+            size=(self.n_out, self.n_in), 
+            mode="bilinear", 
+            align_corners=False
+        ) 
+
+        resized = resized.squeeze(0).squeeze(0)             
+
+        # Hadamard (element-wise) modulation of the fixef weight matrix
+        adapted_weight = self.W_fixed.weight * resized    
+
+        # compute outputr
+        out = F.linear(x, adapted_weight, self.W_fixed.bias) 
+        return out
+
+
+
+
+class Oscillator_RNN_compressed(Base_Model):
+    def __init__(self, params,r_compress = 10,alpha_lora = 1.0,compression_method = 'Lora'):
+        super(Oscillator_RNN_compressed, self).__init__()
+
+        self.N_in = params["N_in"]
+        self.N_out = params["N_out"]
+        self.N_neurons = params["N_neurons"]
+        self.N_layers = params["N_layers"]
+        
+        self.alpha = 3
+        
+        self.eps_int = 1e-4
+        self.dt = 0.1
+        self.max_steps = 40
+        
+        self.sparsity = 0.1
+        self.spectral_radius = 0.8
+        
+        self.activations = {}
+        self.save_activations = False
+        
+        #self.W_input = nn.Linear(in_features=self.N_in, out_features = self.N_neurons)
+        if compression_method == 'Lora':
+            
+            self.W_input =  LoRALinear(n_in=self.N_in, n_out=self.N_neurons,ratio=r_compress,alpha=alpha_lora)
+            self.W_in = nn.ModuleList([
+                LoRALinear(n_in=self.N_neurons, n_out=self.N_neurons,ratio=r_compress)
+                for _ in range(self.N_layers-1)
+            ])
+
+        elif compression_method == 'Regional_had':
+            
+            self.W_input =  Regional_had_weights(n_in=self.N_in, n_out=self.N_neurons,ratio=r_compress)
+            self.W_in = nn.ModuleList([
+                    Regional_had_weights(n_in=self.N_neurons, n_out=self.N_neurons,ratio=r_compress)
+                    for _ in range(self.N_layers-1)
+                    ])
+        
+        else:
+
+            self.W_input =  nn.Linear(in_features=self.N_in, out_features=self.N_neurons)
+            self.W_in = nn.ModuleList([
+                    nn.Linear(in_features=self.N_neurons, out_features=self.N_neurons)
+                    for _ in range(self.N_layers-1)
+                    ])
+        
+        self.W_recurrent =  nn.ModuleList([
+            SparseLinear(self.N_neurons, self.N_neurons,sparsity=self.sparsity,bias=True,sym=True)
+            for _ in range(self.N_layers)
+        ])
+        
+        self.W_out = nn.Linear(in_features = self.N_neurons, out_features = self.N_out)
+        
+
+
+    def init_esn_weights(self, spectral_radius=0.8, sparsity=0.2, reservoir=True):
+        
+        self.sparsity = sparsity
+        self.spectral_radius = spectral_radius
+        
+        with torch.no_grad():
+            
+            #nn.init.xavier_uniform_(self.W_input.weight)
+            
+            for layer in range(self.N_layers):
+                
+                W = (2 * torch.rand(self.N_neurons, self.N_neurons) - 1)
+                #W *= self.W_recurrent[layer].mask
+                eigvals = torch.linalg.eigvals(W).abs().max()
+                
+                if eigvals < 1e-6:
+                    eigvals = 1e-6
+                
+                W *= self.spectral_radius / eigvals
+                
+                
+                #self.W_in[layer-1].W_fixed.weight.data.copy_(W)
+                #self.W_in[layer].W_fixed.bias.data.zero_()
+                
+                
+                if reservoir:
+                    self.W_recurrent[layer].weight.requires_grad = False
+                    self.W_recurrent[layer].bias.requires_grad = False
+
+    
+    
+    def forward(self, X, eps_int=None, dt=None,save_activations = None):
+        if eps_int is None:
+            eps_int = self.eps_int
+        
+        if dt is None: 
+            dt = self.dt
+        if save_activations is None:
+            save_activations = self.save_activations
+        
+        if save_activations:
+            self.activations = {f"layer{l}": [] for l in range(self.N_layers)}
+    
+        batch_size = X.size(0)
+    
+        # Initialize hidden states: shape (N_layers, batch_size, N_neurons)
+        h = [torch.zeros(batch_size, self.N_neurons, device=X.device) for _ in range(self.N_layers)]
+        dh = [torch.zeros(batch_size, self.N_neurons, device=X.device) for _ in range(self.N_layers)]
+    
+        # Input projection
+        x_in = self.W_input(X.view(batch_size, -1))
+    
+    
+        
+        
+        for _ in range(self.max_steps):
+            
+            # Layer 0 update
+            dh[0] = -self.alpha * h[0] + torch.sin(x_in + self.W_recurrent[0](h[0]))
+            h[0] = h[0] + dh[0] * dt
+            if save_activations:
+                self.activations["layer0"].append(h[0].detach().cpu().clone())
+    
+            # Updates for other layers
+            for l in range(1, self.N_layers):
+                dh[l] = -self.alpha * h[l] + torch.sin(
+                    self.W_in[l-1](h[l-1]) + self.W_recurrent[l](h[l])
+                )
+                h[l] = h[l] + dh[l] * dt
+                if save_activations:
+                    self.activations[f"layer{l}"].append(h[l].detach().cpu().clone())
+                
+        # Output projection from last layer
+        out = self.W_out(h[-1])
+        return out
+
+
+
+class simple_FFNN_compressed(Base_Model):
+    def __init__(self, params, r_compress=10,alpha_lora=1.0, compression_method='Lora'):
+        super(simple_FFNN_compressed, self).__init__()  # Fixed class name
+        
+        self.N_in = params["N_in"]
+        self.N_out = params["N_out"]
+        self.N_neurons = params["N_neurons"]
+        self.N_hidden_layers = params["N_layers"]
+        self.r_compress = r_compress
+        self.compression_method = compression_method
+
+        # Input layer with compression
+        if compression_method == 'Lora':
+            self.input_layer = LoRALinear(n_in=self.N_in, n_out=self.N_neurons, ratio=r_compress,alpha = alpha_lora)
+        elif compression_method == 'Regional_had':
+            self.input_layer = Regional_had_weights(n_in=self.N_in, n_out=self.N_neurons, ratio=r_compress)
+        else:
+            self.input_layer = nn.Linear(self.N_in, self.N_neurons)
+        
+        # Hidden layers with compression
+        if compression_method == 'Lora':
+            self.hidden_layers = nn.ModuleList([
+                LoRALinear(n_in=self.N_neurons, n_out=self.N_neurons, ratio=r_compress,alpha = alpha_lora)
+                for _ in range(self.N_hidden_layers - 1)
+            ])
+        elif compression_method == 'Regional_had':
+            self.hidden_layers = nn.ModuleList([
+                Regional_had_weights(n_in=self.N_neurons, n_out=self.N_neurons, ratio=r_compress)
+                for _ in range(self.N_hidden_layers - 1)
+            ])
+        else:
+            self.hidden_layers = nn.ModuleList([
+                nn.Linear(self.N_neurons, self.N_neurons)
+                for _ in range(self.N_hidden_layers - 1)
+            ])
+        
+        # Output layer (always uncompressed)
+        self.output_layer = nn.Linear(self.N_neurons, self.N_out)
+        
+        self.activation = nn.Tanh()
+    
+    def forward(self, X):
+        x = X.view(X.size(0), -1)  # Flatten input
+        
+        x = self.activation(self.input_layer(x))
+        for layer in self.hidden_layers:
+            x = self.activation(layer(x))
+        
+        x = self.output_layer(x)
+        return x  # logits
+
+
 
 
 #DATA PREPROCESSING  

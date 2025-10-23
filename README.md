@@ -1,27 +1,27 @@
 # ODE based Physical Neural Network (PNN) trained with model-free methods
 
-This Github repo contains all my code implementing an ODE based dynamical system and using it as a recurrent neural network. This is done to study model-free optimization on a physically plausible NN structure. All the code is implemented using pytorch and numpy. I used ChatGPT to help format my markdown hence the cringe emojis ^^. The folders are split by Tasks, and then there is a Utils folder which has all the useful scripts I use. Here is a small overview of the most important files I use.
+This Github repo contains all my code implementing an ODE based dynamical system and using it as a recurrent neural network. This is done to study model-free optimization on a physically plausible NN structure. All the code is implemented using pytorch and numpy. I used ChatGPT to format my markdown. The folders are split by Tasks, and then there is a Utils folder which has all the useful scripts I use. Here is a small overview of the most important files I use.
 
 
 
 
 
-## 🧠 `NN_utils.py` – Custom Neural Network Utilities
+## `NN_utils.py` – Custom Neural Network Utilities
 
 This module defines several custom PyTorch models and training routines, including both standard and physics-inspired recurrent neural networks. It provides modular, extensible tools for training neural networks using either backpropagation or gradient-free black-box optimization methods.
 
 ---
 
-### ✅ Key Components
+### Key Components
 
-#### 🧩 `Base_Model`
+####  `Base_Model`
 - Base class for all models.
 - Provides utilities to:
   - Count trainable parameters.
   - Get/set model weights as flat NumPy arrays.
   - Perform stateless forward passes (useful for black-box optimizers), forward_pass_params.
 
-#### 🔁 `Oscillator_RNN_dyn` – Dynamical Recurrent Neural Network (**Used**)
+####  `Oscillator_RNN_dyn` – Dynamical Recurrent Neural Network (**Used**)
 - Custom RNN inspired by nonlinear oscillator dynamics.
 - Each layer’s hidden state evolves over time using a discretized differential equation:
 
@@ -48,7 +48,7 @@ This plot allows us to set the max number of steps for integration if needed.
 There is another class that I use for the population based Algorithms called "Oscillator_RNN_parallel" this used a fixed number of steps that we can set to 30 or 40 according to the above plot. This is because I parallelize the forward pass across the population (sequential for loop is too slow), this requires time steps to be fixed across different candidates in the population otherwise the tensor (pop_soze,_batch_size,time_steps) has slices of different size which doe snot work. Also the logic of stopping if we reach a trashold or the number of max step is reached does not work with the vmap pytorch function that handles parallelization. In short, we need a fixed for loop.
 
 
-#### 🧪 Other Models
+####  Other Models
 I used these mainly for debugging when I lost faith... Particularly the time independent models since they run much faster x30 since there is no time loop.
 - `RNN_network`: Vanilla RNN using PyTorch’s built-in `nn.RNN`.
 - `Custom_RNN`: Layered sinusoidal RNN with fixed-time evolution.
@@ -56,7 +56,7 @@ I used these mainly for debugging when I lost faith... Particularly the time ind
 
 ---
 
-### ⚙️ Training Utilities
+###  Training Utilities
 
 - `train_BP_torch`: Standard backpropagation training loop using `torch.optim`.3
 - `train_online_pop_NN`: Evolutionary-style population-based optimization loop (PEPG, CMAES if you have the patience of a Shaolin monk, particle swarm if you are a clinically insane). This is my original loop with an explicit for loop which makes it very slow...
@@ -83,13 +83,13 @@ I used these mainly for debugging when I lost faith... Particularly the time ind
 - New updated compatible with latest pytorch versions very annoying because it uses this dictionary structure to pass parameters to pass to the vectorized PNN function.
 ---
 
-## ⚙️ `optimization_algorithms.py` – Black-Box Optimizers
+##  `optimization_algorithms.py` – Black-Box Optimizers
 
 This script implements several gradient-free and low-level optimization algorithms, which can be used to train neural networks without backpropagation. These are especially useful for models with non-differentiable components or when gradient computation is impractical.
 
 ---
 
-### 🧮 Included Optimizers
+###  Included Optimizers
 
 #### 🔹 `AdamOptimizer`
 - Custom implementation of the classic Adam optimizer in NumPy.

@@ -30,7 +30,8 @@ torch.set_num_threads(1)
 # Model setup (our ODE RNN class)
 # ----------------------------------------------------------
 
-n_neurons = 10  # sweep this to study scaling
+n_neurons = 250  # sweep this to study scaling
+
 RNN_params = {
     "N_in": 784,
     "N_out": 10,
