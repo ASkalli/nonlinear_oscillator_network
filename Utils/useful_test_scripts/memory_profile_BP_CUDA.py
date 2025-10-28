@@ -68,38 +68,55 @@ itemsize = torch.finfo(dtype).bits // 8
 print(f"Model parameters: {n_params:,} | dtype: {dtype}, itemsize={itemsize} bytes")
 
 # ----------------------------------------------------------
-# Measurement: one training update
+# Move model & data to CUDA
 # ----------------------------------------------------------
-# Warmup to allocate optimizer state
-optimizer.zero_grad(set_to_none=True)
-_ = model(x)
-_ = criterion(_, y)
-_.backward()
-optimizer.step()
-optimizer.zero_grad(set_to_none=True)
-gc.collect()
+assert torch.cuda.is_available(), "CUDA is required for this measurement."
+device = torch.device("cuda")
+model = model.to(device)
+x = x.to(device, non_blocking=True)
+y = y.to(device, non_blocking=True)
 
-# Now measure one update cleanly
-rss_before = rss_mb()
-
+# ----------------------------------------------------------
+# Warm-up (allocate optimizer state & CUDA context)
+# ----------------------------------------------------------
 optimizer.zero_grad(set_to_none=True)
 out = model(x)
 loss = criterion(out, y)
 loss.backward()
 optimizer.step()
 optimizer.zero_grad(set_to_none=True)
-
 del out, loss
 gc.collect()
+torch.cuda.empty_cache()
+torch.cuda.synchronize()
 
-rss_after = rss_mb()
-rss_delta = rss_after - rss_before
+# ----------------------------------------------------------
+# Measurement: single update, isolate backward() memory
+# ----------------------------------------------------------
+print("\n=== CUDA memory measurement (single backward) ===")
+
+optimizer.zero_grad(set_to_none=True)
+
+# Forward outside the measured region
+out = model(x)
+loss = criterion(out, y)
+
+# Isolate backward-only peak
+torch.cuda.synchronize()
+torch.cuda.reset_peak_memory_stats()   # start fresh right before backward
+
+loss.backward()
+
+torch.cuda.synchronize()
+backward_peak_bytes = torch.cuda.max_memory_allocated()
+
+# Finish the step (not included in the backward peak above)
+optimizer.step()
+optimizer.zero_grad(set_to_none=True)
 
 # ----------------------------------------------------------
 # Report
 # ----------------------------------------------------------
-print(f"\nProcess RSS delta (real): {rss_delta:.3f} MB")
-print(f"Process RSS total (now):  {rss_after:.3f} MB")
-
-# Optional theoretical baseline
+print(f"Peak GPU memory during backward: {backward_peak_bytes/1e6:.2f} MB")
 print(f"Theoretical param data: {(n_params * itemsize) / 1e6:.3f} MB")
+

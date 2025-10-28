@@ -13,7 +13,7 @@ def rss_mb():
 # -------------------------------
 # Params
 # -------------------------------
-N_dim = 50             # adjust as needed
+N_dim = 164560             # adjust as needed
 dtype = np.float32         # switch to np.float64 to compare but doesn't work for now ... just divide by 2
 n_loops = 1                # number of ask/tell updates to run (and measure)
 
@@ -23,7 +23,7 @@ n_loops = 1                # number of ask/tell updates to run (and measure)
 init_pos = np.random.randn(N_dim, 1).astype(dtype, copy=False)
 
 # choose an even pop_size (PEPG typically uses mirrored sampling)
-pop_size = np.max(int(0.01 * N_dim),10)
+pop_size = np.max([int(0.01 * N_dim),10])
 pop_size = pop_size + 1 if (pop_size % 2) else pop_size
 
 # dummy rewards for the tell() step (shape must match your PEPG implementation)
