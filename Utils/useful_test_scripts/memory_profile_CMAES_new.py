@@ -10,7 +10,7 @@ import os, sys, gc, platform, ctypes
 import numpy as np
 import psutil, tracemalloc
 
-# --- Your local utils path (adjust if needed) ---
+# ---  local utils path (adjust if needed) ---
 sys.path.append('/home/anas/Desktop/Simulations/Training_NLO/nonlinear_oscillator_network/Utils')
 from optimization_algorithms import *   # expects CMA_opt
 
@@ -57,7 +57,7 @@ rng = np.random.default_rng(123)
 # Initial mean (column vector). Keep dtype consistent.
 init_pos = rng.standard_normal((N_dim, 1), dtype=dtype)
 
-# Rewards for tell(); shape must match your CMA implementation.
+# Rewards for tell(); shape must match CMA implementation.
 rewards = rng.standard_normal((pop_size, 1), dtype=dtype)
 
 # Create optimizer. NOTE: If CMA_opt internally uses float64, memory doubles.
@@ -115,7 +115,7 @@ except NameError:
     pass
 report_array("rewards", rewards)
 
-# Try to introspect common internal arrays (if your CMA_opt exposes them)
+# Try to introspect common internal arrays (if CMA_opt exposes them)
 for attr in ["mu", "sigma", "population", "eps", "noise", "cov", "C", "D", "B"]:
     val = getattr(CMA_optimizer, attr, None)
     if isinstance(val, np.ndarray):
@@ -131,6 +131,6 @@ print(f"tracemalloc peak    (Python):   {peak_py/1e6:.3f} MB")
 
 print("\nNotes:")
 print("- Δ Peak RSS over baseline is robust and won’t be negative; it reflects true max footprint of the update(s).")
-print("- If any arrays show dtype=float64, your CMA pipeline is upcasting; expect ~2× memory vs float32.")
+print("- If any arrays show dtype=float64,then it means our CMA pipeline is upcasting; expect ~2× memory vs float32.")
 print("- tracemalloc measures Python allocations, not NumPy’s C buffers; treat it as diagnostic, not ground truth.")
 print("- malloc_trim() helps reduce allocator noise on Linux; harmless elsewhere.")

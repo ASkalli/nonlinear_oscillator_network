@@ -26,7 +26,7 @@ init_pos = np.random.randn(N_dim, 1).astype(dtype, copy=False)
 pop_size = np.max([int(0.01 * N_dim),10])
 pop_size = pop_size + 1 if (pop_size % 2) else pop_size
 
-# dummy rewards for the tell() step (shape must match your PEPG implementation)
+# dummy rewards for the tell() step (shape must match CMA implementation)
 rewards = np.random.randn(pop_size, 1).astype(dtype, copy=False)
 
 CMA_optimizer = CMA_opt(N_dim, pop_size, select_pop=int(pop_size/2), sigma_init=0.01, mean_init=init_pos)
@@ -69,7 +69,7 @@ except NameError:
     pass
 report_array("rewards", rewards)
 
-# Try to report common internal state if exposed by your class (optional, safe checks)
+# Try to report common internal state if exposed by class (optional, safe checks)
 for attr in ["mu", "sigma", "population", "eps", "noise"]:
     val = getattr(CMA_optimizer, attr, None)
     if isinstance(val, np.ndarray):
