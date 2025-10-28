@@ -13,7 +13,7 @@ def rss_mb():
 # -------------------------------
 # Params
 # -------------------------------
-N_dim = 11250             # adjust as needed
+N_dim = 8180             # adjust as needed
 dtype = np.float32         # switch to np.float64 to compare but doesn't work for now ... just divide by 2
 n_loops = 1                # number of ask/tell updates to run (and measure)
 
