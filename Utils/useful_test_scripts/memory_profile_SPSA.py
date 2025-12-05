@@ -9,12 +9,12 @@ import time
 from optimization_algorithms import *
 import gc
 
-import numpy as np, sys, psutil, os, gc, tracemalloc, time
+import sys, psutil, os, gc, tracemalloc, time
 
 def rss_mb():
     return psutil.Process(os.getpid()).memory_info().rss / 1e6
 
-N_dim = 324260
+N_dim = 50
 dtype = np.float32  # switch to np.float64 to compare but doesn't work for now ... just divide by 2
 n_loops = 1
 
@@ -38,7 +38,7 @@ for _ in range(n_loops):
     grad_spsa = spsa_optimizer.approximate_gradient(reward_plus, reward_minus)
     step = adam_optimizer.step(grad_spsa)
     current_params = spsa_optimizer.update_parameters_step(step)
-
+    
     # _scalene_hold = [init_pos, params_plus, params_minus, grad_spsa, step, current_params]
 
     # force a GC cycle if we want a “post-op” snapshot
