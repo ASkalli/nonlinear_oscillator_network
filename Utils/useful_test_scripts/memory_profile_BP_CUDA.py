@@ -56,7 +56,7 @@ dtype = torch.float32
 device = torch.device("cuda")
 model = model.to(device)
 
-B = 1
+B = 10
 x = torch.randn(B, RNN_params["N_in"], dtype=dtype, device=device)
 y = torch.randint(0, RNN_params["N_out"], (B,), dtype=torch.long, device=device)
 

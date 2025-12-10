@@ -49,7 +49,7 @@ if __name__ == "__main__":
 
     for k in range(len(N_neurons_vec)):
 
-        N_in, N_h, N_out, B = 784, N_neurons_vec[k], 10, 2000
+        N_in, N_h, N_out, B = 784, N_neurons_vec[k], 10, 10
         n_params = count_params(N_in, N_h, N_out)
 
         out = estimate_mem_MB(N_in, N_h, N_out, B, dtype_bytes=4,

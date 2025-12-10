@@ -172,7 +172,7 @@ def rss_mb():
 # -------------------------------
 # Params
 # -------------------------------
-N_dim   = 208270
+N_dim   = 99710
 dtype   = torch.float32
 device  = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 n_loops = 5
