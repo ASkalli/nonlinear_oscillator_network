@@ -7,7 +7,7 @@ import psutil, os, gc, time
 from optimization_algorithms import *
 
 # ===========================
-#  Optimizer classes (unchanged)
+#  Optimizer classes 
 # ===========================
 class SPSAOpt_torch:
     def __init__(self, params, alpha=1e-2, epsilon=1e-5, device=None, dtype=torch.float32):

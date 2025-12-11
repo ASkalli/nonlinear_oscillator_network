@@ -39,7 +39,7 @@ device = torch.device("cuda")
 # ----------------------------------------------------------
 RNN_params = {"N_in": 784, "N_out": 10, "N_neurons": 400, "N_layers": 3}
 
-B = 1000
+B = 1000000
 criterion = nn.CrossEntropyLoss()
 n_loops = 5
 warmup_loops = 5
