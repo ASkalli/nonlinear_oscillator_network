@@ -15,6 +15,7 @@ import time
 import sys
 import pickle
 import gc
+import gzip
 
 # Add your module path
 sys.path.append('G:/Utilisateurs/anas.skalli/Desktop/Projects/nonlinear_oscillator_network/Utils')
@@ -76,18 +77,13 @@ def run_single_experiment(n_neurons, s, n_epochs, return_dict):
     init_pos = model.get_params()
     
     pop_size = int(0.01*N_dim)
-    #pop_size = 100
-    PEPG_optimizer = PEPG_opt(N_dim, pop_size = pop_size, learning_rate=0.005, starting_mu=init_pos ,starting_sigma=1e-1)
-    
-    PEPG_optimizer.sigma_decay = 0.9999
-    PEPG_optimizer.sigma_alpha=0.2
-    PEPG_optimizer.sigma_limit=1e-3
-    PEPG_optimizer.elite_ratio=0.1
-    PEPG_optimizer.weight_decay=0.005
+
+    CMA_optimizer = CMA_opt(N_dim, pop_size, select_pop=int(pop_size/2), sigma_init=0.1, mean_init=init_pos)
+    #CMA_optimizer.eigen_update_frequency = N_dim // 10
 
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Neurons: {n_neurons}, Run: {s+1}, Params: {model.count_parameters()}", flush=True)
 
-    result = train_online_pop_parallel(model, n_epochs, train_loader_MNIST, test_loader_MNIST, loss, PEPG_optimizer)
+    result = train_online_pop_parallel(model, n_epochs, train_loader_MNIST, test_loader_MNIST, loss, CMA_optimizer)
 
     return_dict[(n_neurons, s)] = result
     
@@ -137,7 +133,7 @@ if __name__ == '__main__':
     print("All results collected successfully.")
     print(f"Total time = {time.time() - start_time:.2f} s")
     
-    with open('results/paramscan_l2regularization_PNN_PEPG_MNIST_run3.pkl', 'wb') as f:
+    with gzip.open('results/paramscan_PNN_CMA_MNIST_run1.pkl.gz', 'wb') as f:
         pickle.dump(results, f)  
 
     analyze_and_plot(stats, N_neurons_vec, results, top_k=10)
