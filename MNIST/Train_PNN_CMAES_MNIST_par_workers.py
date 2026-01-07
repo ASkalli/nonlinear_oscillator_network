@@ -15,7 +15,6 @@ import time
 import sys
 import pickle
 import gc
-import gzip
 
 # Add your module path
 sys.path.append('G:/Utilisateurs/anas.skalli/Desktop/Projects/nonlinear_oscillator_network/Utils')
@@ -76,10 +75,21 @@ def run_single_experiment(n_neurons, s, n_epochs, return_dict):
     N_dim = model.count_parameters()
     init_pos = model.get_params()
     
+    if init_pos.requires_grad:
+    # Detach the tensor from the computation graph
+        init_pos = init_pos.detach()
+    if init_pos.is_cuda:
+        # Move the tensor to the CPU
+        init_pos = init_pos.cpu()
+    init_pos = init_pos.numpy()
+    
     pop_size = int(0.01*N_dim)
+    #pop_size = 100
 
-    CMA_optimizer = CMA_opt(N_dim, pop_size, select_pop=int(pop_size/2), sigma_init=0.1, mean_init=init_pos)
+    CMA_optimizer = CMA_opt(N_dim, pop_size, select_pop=int(pop_size/2), sigma_init=0.01, mean_init=init_pos)
     #CMA_optimizer.eigen_update_frequency = N_dim // 10
+
+                
 
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Neurons: {n_neurons}, Run: {s+1}, Params: {model.count_parameters()}", flush=True)
 
@@ -98,8 +108,8 @@ if __name__ == '__main__':
     mp.set_start_method('spawn', force=True)
 
     N_neurons_vec =  [5, 10, 20 ,30, 50, 75, 100]
-    #N_neurons_vec = [100]
-    n_epochs = 1000
+    N_neurons_vec = [30]
+    n_epochs = 500
     stats = 1
 
     print("Script started at:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
@@ -133,7 +143,7 @@ if __name__ == '__main__':
     print("All results collected successfully.")
     print(f"Total time = {time.time() - start_time:.2f} s")
     
-    with gzip.open('results/paramscan_PNN_CMA_MNIST_run1.pkl.gz', 'wb') as f:
+    with open('results/30_PNN_CMA_MNIST_run1.pkl', 'wb') as f:
         pickle.dump(results, f)  
 
     analyze_and_plot(stats, N_neurons_vec, results, top_k=10)

@@ -99,17 +99,16 @@ def count_params(N_in, N_h, N_out):
 if __name__ == "__main__":
 
     N_neurons_vec = [5, 10, 20, 30, 50, 75, 100, 150, 180]
-
+    N_dim_vec = [   50,   200,   800,  1800,  5000, 11250]
     mem_cost_pepg = []
     n_params_vec  = []
     pops          = []
 
-    for N_h in N_neurons_vec:
-        N_in, N_out = 784, 10
-
-        # same param count as in your BP script
-        N_params = count_params(N_in, N_h, N_out)
-        n_params_vec.append(N_params)
+    #for N_h in N_neurons_vec:
+    for N_params in N_dim_vec:
+        #N_in, N_out = 784, 10
+        #N_params = count_params(N_in, N_h, N_out)
+        #n_params_vec.append(N_params)
 
         # PEPG: pop_size = 1% of N_params (min 10), enforced even
         out = estimate_pepg_mem_MB(
