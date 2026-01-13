@@ -58,9 +58,9 @@ def epochs_to_conv(avg_results,if_plot=False):
     knee_idx_vec = []
     for k in range(len(N_neurons_vec)):
         kneedle = KneeLocator(
-            np.arange(idx_start,np.shape(test_loss_smooth)[-1]), test_loss_smooth[k,idx_start:len(avg_results[0]['test_loss'])+1],
+            np.arange(idx_start,np.shape(test_loss_smooth)[-1]), test_loss_smooth[k,idx_start:len(avg_results[k]['test_loss'])+1],
             S=1.0,                     # sensitivity (larger -> fewer knees)
-            curve="convex",            # try "concave" if your curve bends the other way
+            curve="convex",            
             direction="decreasing",    # loss goes down with epochs
             online=False
         )

@@ -45,7 +45,32 @@ def average_data_dicts(dicts_list):
     return avg_results
 
 
-def locate_curve_knee(avg_results_dict,N_neurons_vec,idx_start,idx_run=0,window_len=100,plot_bool=True):
+class CustomKneeLocator:
+    """
+    Custom knee locator just as a sanity check but not super optimal
+    """
+    def __init__(self, curve):
+        self.curve = np.asarray(curve)
+        self.x = np.arange(len(curve))
+
+        # Endpoints
+        x0, x1 = self.x[0], self.x[-1]
+        y0, y1 = self.curve[0], self.curve[-1]
+
+        # Line parameters
+        self.a = (y1 - y0) / (x1 - x0)
+        self.b = y0 - self.a * x0
+
+        # Reference line
+        self.line = self.a * self.x + self.b
+
+        # Distance (vertical)
+        self.diff = self.line - self.curve
+
+        # Knee location
+        self.knee = np.argmax(np.abs(self.diff))
+
+def locate_curve_knee(avg_results_dict,N_neurons_vec,idx_start,idx_run=0,window_len=100,plot_bool=True,method='default'):
     
     """
     
@@ -67,19 +92,29 @@ def locate_curve_knee(avg_results_dict,N_neurons_vec,idx_start,idx_run=0,window_
         test_loss_mat[k,:len( D['test_loss'])] = D['test_loss']
         train_loss_mat[k,:len(D['train_loss'])] = D['train_loss']
         
-        test_loss_smooth = scipy.signal.savgol_filter(test_loss_mat[k,:len( D['test_loss'])],window_length=100,polyorder=3,axis=-1)
+        test_loss_smooth = scipy.signal.savgol_filter(test_loss_mat[k,:len( D['test_loss'])],window_length=window_len,polyorder=3,axis=-1)
         test_loss_smooth_mat[k,:len(test_loss_smooth)] = test_loss_smooth
         test_acc_mat[k,:len(D['test_acc'])] = D['test_acc']
-    
-        kneedle = KneeLocator(
-            np.arange(idx_start,np.shape(test_loss_smooth)[-1]), test_loss_smooth[idx_start:],
-            S=1.0,                     # sensitivity (larger -> fewer knees)
-            curve="convex",            # try "concave" if your curve bends the other way
-            direction="decreasing",    # loss goes down with epochs
-            online=False
-        )
-    
-        knee_idx_vec.append(int(kneedle.knee + idx_start)) 
+
+        #print(method == 'default')
+        if method == 'default':
+            kneedle = KneeLocator(
+                np.arange(idx_start,np.shape(test_loss_smooth)[-1]), test_loss_smooth[idx_start:],
+                S=1.0,                     # sensitivity (larger -> fewer knees)
+                curve="convex",            # try "concave" if your curve bends the other way
+                direction="decreasing",    # loss goes down with epochs
+                online=False
+            )
+            knee = kneedle.knee + idx_start
+
+        elif method == 'custom':
+            print(test_loss_smooth[-1])
+            kneedle = CustomKneeLocator(test_loss_smooth)
+            knee = kneedle.knee
+        else:
+            raise ValueError('method needs to be either custom or default bro')
+
+        knee_idx_vec.append(int(knee)) 
     
     knee_idx_vec = np.array(knee_idx_vec)
     
@@ -92,6 +127,10 @@ def locate_curve_knee(avg_results_dict,N_neurons_vec,idx_start,idx_run=0,window_
             
     
     return knee_idx_vec,loss_cure_conv,acc_curve_conv
+
+
+
+
 
 
 def process_cost_to_conv(avg_results_dict,knee_idx_vec,algo_mem_perepoch,plot_bool=True):
