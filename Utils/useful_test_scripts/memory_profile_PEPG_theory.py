@@ -100,6 +100,8 @@ if __name__ == "__main__":
 
     N_neurons_vec = [5, 10, 20, 30, 50, 75, 100, 150, 180]
     N_dim_vec = [   50,   200,   800,  1800,  5000, 11250]
+    N_dim_vec = [50,200,800,1100,1500,4096] # for QNN
+
     mem_cost_pepg = []
     n_params_vec  = []
     pops          = []

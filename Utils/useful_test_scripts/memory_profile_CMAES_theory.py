@@ -120,6 +120,8 @@ if __name__ == "__main__":
     N_neurons_vec = [5, 10, 20, 30, 50, 75, 100, 150, 180]
 
     N_dim_vec = [   50,   200,   800,  1800,  5000, 11250]
+    # for QNN : 
+    N_dim_vec = [65, 128, 227, 470, 1289, 4412]
 
     mem_cost_cma = []
     n_params_vec  = []
