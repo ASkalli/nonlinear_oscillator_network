@@ -1,28 +1,42 @@
 
 def estimate_mem_MB(N_in, N_h, N_out, B, dtype_bytes=4,
-                    snapshots=True, cache_input=True, cache_logits=True):
-    # ----- parameters -----
+                    snapshots=True, cache_input=True, cache_logits=True,
+                    optimizer=None):
+    #  parameters 
     W = N_in*N_h + 2*N_h*N_h + N_h*N_out
     b = 3*N_h + N_out
     N_params = W + b
     N_grads  = N_params
 
-    # ----- forward cache -----
+    #  optimizer state
+    if optimizer is None:
+        N_opt = 0
+    elif optimizer.lower() == "adam":
+        N_opt = 2 * N_params   # m and v
+    elif optimizer.lower() == "sgd":
+        N_opt = 0
+    elif optimizer.lower() == "momentum":
+        N_opt = N_params       # velocity
+    else:
+        raise ValueError(f"Unknown optimizer: {optimizer}")
+
+    #forward cache 
     acts = (cache_input * N_in) + (3*N_h) + (cache_logits * N_out)
     pre  = (3*N_h) + N_out
-    N_fw = B * (acts + pre)  # a^0..a^3, logits + z^1..z^3, z_out
+    N_fw = B * (acts + pre)
 
-    # ----- backward cache -----
+    #  backward cache 
     dA = 3 * B * N_h
     dZ = B * (3*N_h + N_out)
     dX = B * N_in
     snaps_Wb = (W + b) if snapshots else 0
     N_bw = dA + dZ + dX + snaps_Wb
 
-    # ----- totals -----
+    # total
     sections = {
         "params": N_params,
         "grads": N_grads,
+        "optimizer_state": N_opt,
         "forward_cache": N_fw,
         "backward_cache": N_bw,
     }
@@ -49,12 +63,17 @@ if __name__ == "__main__":
 
     for k in range(len(N_neurons_vec)):
 
-        N_in, N_h, N_out, B = 784, N_neurons_vec[k], 10, 10
+        N_in, N_h, N_out, B = 784, N_neurons_vec[k], 10, 100
         n_params = count_params(N_in, N_h, N_out)
 
-        out = estimate_mem_MB(N_in, N_h, N_out, B, dtype_bytes=4,
-                            snapshots=True, cache_input=True, cache_logits=True)
-
+        out = estimate_mem_MB(
+            N_in, N_h, N_out, B,
+            dtype_bytes=4,
+            snapshots=True,
+            cache_input=True,
+            cache_logits=True,
+            optimizer="adam"
+        )
         mem_cost.append(out['total_MB'])
         n_params_vec.append(n_params)
 
