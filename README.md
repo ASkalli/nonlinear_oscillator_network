@@ -21,7 +21,7 @@ This module defines several custom PyTorch models and training routines, includi
   - Get/set model weights as flat NumPy arrays.
   - Perform stateless forward passes (useful for black-box optimizers), forward_pass_params.
 
-####  `Oscillator_RNN_dyn` – Dynamical Recurrent Neural Network (**Used**)
+####  `Oscillator_RNN_dyn` or `Oscillator_RNN_parallel`  – Dynamical Recurrent Neural Network (**Used**)
 - Custom RNN inspired by nonlinear oscillator dynamics.
 - Each layer’s hidden state evolves over time using a discretized differential equation:
 
@@ -36,6 +36,7 @@ When using the network to perform memory-independent tasks we wait for it to rea
 - Integration is realized via a simple explicit Euler method with a small enough step size to resolve the transients.
 - Integration continues until the system reaches a **steady state**, defined by a maximum change threshold (`eps_int`) or a step limit (`max_steps`).
 - While the integration goes on the input data is "clamped" till steady state is reached, at which point we get the corresponding output for that input.
+- For parallelization across th e population for population-based methods a fixed number of integration steps is required so I use `Oscillator_RNN_parallel`.
 
 To check steady state I made a handy script called "Oscillator_RNN_ssdyna_check.py" (very original I know):
 Here are some pictures of the activation states : 
